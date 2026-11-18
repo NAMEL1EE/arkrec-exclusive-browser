@@ -1,6 +1,9 @@
+import { handleRefresh } from './refresh.mjs'
+
 const PAGE_SIZE = 30
 const MAX_BODY = 4096
 const NOTE_PATH = '/api/notes'
+const REFRESH_PATH = '/api/refresh'
 const UUID = /^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i
 
 function validStageKey(value) {
@@ -41,7 +44,7 @@ export default {
     const origin = request.headers.get('Origin')
     const headers = new Headers({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', Vary: 'Origin' })
     const reply = (data, status = 200) => Response.json(data, { status, headers })
-    if (url.pathname !== NOTE_PATH) return reply({ error: '接口不存在。' }, 404)
+    if (url.pathname !== NOTE_PATH && url.pathname !== REFRESH_PATH) return reply({ error: '接口不存在。' }, 404)
     if (origin && origin !== env.PAGES_ORIGIN && origin !== url.origin) return reply({ error: '站点来源不匹配。' }, 403)
     if (origin) headers.set('Access-Control-Allow-Origin', origin)
 
@@ -53,6 +56,7 @@ export default {
     }
 
     try {
+      if (url.pathname === REFRESH_PATH) return await handleRefresh(request, env, headers, reply)
       if (request.method === 'GET') {
         const stage = url.searchParams.get('stage')
         const cursor = url.searchParams.get('before')
@@ -107,8 +111,9 @@ export default {
       headers.set('Allow', 'GET, POST, OPTIONS')
       return reply({ error: '请求方式不支持。' }, 405)
     } catch (error) {
-      console.error('notes-storage', error?.name)
-      return reply({ error: '备注服务暂时不可用，请稍后再试。' }, 503)
+      const feature = url.pathname === REFRESH_PATH ? '更新' : '备注'
+      console.error('storage', url.pathname, error?.name)
+      return reply({ error: feature + '服务暂时不可用，请稍后再试。' }, 503)
     }
   },
 }

@@ -18,7 +18,7 @@
 
   const stageKey = JSON.stringify([group.id, stage.operation, stage.cn_name])
   const localPreview = location.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(location.hostname)
-  const api = window.ARKREC_NOTES_CONFIG?.apiUrl ?? (localPreview ? '/api/notes' : null)
+  const api = window.ARKREC_SITE_CONFIG?.apiUrl ?? (localPreview ? '/api/notes' : null)
   if (!api || location.protocol === 'file:') {
     $('notes-unavailable').hidden = false
     return

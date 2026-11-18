@@ -61,7 +61,7 @@ thead th:first-child{width:32%}
 tbody tr+tr{border-top:1px solid var(--line)}
 tbody tr:hover{background:#f7faff}
 .stage-code{display:inline-block;font-family:ui-monospace,Consolas,monospace;font-weight:760;font-size:.94rem}
-.stage-name{display:block;color:var(--muted);font-size:.81rem;font-weight:400;margin-top:2px}
+.stage-steps{display:block;color:var(--muted);font-size:.81rem;font-weight:400;margin-top:2px}
 .chip{display:inline-block;border-radius:6px;padding:2px 7px;margin:2px 3px 2px 0;background:var(--pale);color:#194883}
 td[data-mode=challenge] .chip{background:var(--amber-pale);color:var(--amber)}
 .no-operator,.empty{color:var(--muted)}
@@ -107,3 +107,12 @@ td[data-mode=challenge] .chip{background:var(--amber-pale);color:var(--amber)}
 .note-list li p{margin:4px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
 .note-meta{font-size:.8rem;color:var(--muted)}
 .note-more{margin-top:10px;color:var(--accent);border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:6px 10px}
+
+.refresh-controls{text-align:right;color:var(--muted)}
+.refresh-row{display:flex;align-items:center;justify-content:flex-end;gap:9px;flex-wrap:wrap}
+.refresh-button{border:1px solid #bdd3f2;border-radius:8px;background:var(--pale);color:var(--accent);padding:6px 11px;font-size:.86rem;font-weight:650;white-space:nowrap}
+.refresh-button:disabled{cursor:default;color:var(--muted);background:var(--bg);border-color:var(--line)}
+.refresh-status,.refresh-run{font-size:.8rem}
+.intro .refresh-status,.refresh-run{margin-top:4px}
+.refresh-run{display:inline-block}
+@media(max-width:760px){.refresh-controls{text-align:left}.refresh-row{justify-content:flex-start}}

@@ -39,26 +39,32 @@ jobs:
           node scripts/sync.mjs update --max-pages "$MAX_PAGES"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add dist/snapshot.js
+          git add dist/snapshot.js data/flow-records.json
           if ! git diff --cached --quiet; then
             git commit -m "更新解手流独享快照"
             git push origin HEAD:main
           fi
       - uses: actions/configure-pages@v5
-      - name: 配置匿名备注
+      - name: 配置备注和公开更新服务
         env:
           NOTES_API_URL: ${{ vars.NOTES_API_URL }}
+          REFRESH_API_URL: ${{ vars.REFRESH_API_URL }}
         run: |
           node --input-type=module <<'NODE'
           import { writeFileSync } from 'node:fs'
-          const { NOTES_API_URL } = process.env
-          if (NOTES_API_URL) {
-            const api = new URL(NOTES_API_URL)
-            if (api.protocol !== 'https:' || api.pathname !== '/api/notes' || api.username || api.password || api.search || api.hash) {
-              throw new Error('NOTES_API_URL 必须是 HTTPS 的 /api/notes 接口地址')
+          function apiUrl(value, route) {
+            if (!value) return null
+            const api = new URL(value)
+            if (api.protocol !== 'https:' || api.pathname !== route || api.username || api.password || api.search || api.hash) {
+              throw new Error('服务地址必须是 HTTPS 的 ' + route + ' 路径')
             }
-            writeFileSync('dist/notes-config.js', 'window.ARKREC_NOTES_CONFIG = ' + JSON.stringify({ apiUrl: api.href }) + '\n')
+            return api.href
           }
+          const config = {
+            apiUrl: apiUrl(process.env.NOTES_API_URL, '/api/notes'),
+            refreshUrl: apiUrl(process.env.REFRESH_API_URL, '/api/refresh'),
+          }
+          writeFileSync('dist/site-config.js', 'window.ARKREC_SITE_CONFIG = ' + JSON.stringify(config) + '\n')
           NODE
       - uses: actions/upload-pages-artifact@v4
         with:

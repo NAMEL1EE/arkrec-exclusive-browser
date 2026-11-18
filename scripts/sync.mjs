@@ -1,17 +1,19 @@
-import { open, readFile, rename, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, open, readFile, readdir, realpath, rename, unlink, writeFile } from 'node:fs/promises'
 import { parseArgs } from 'node:util'
 import { setTimeout as wait } from 'node:timers/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { dirname, join } from 'node:path'
+import { parseFlowRecord, stageKey, withFlowSteps } from './flow-details.mjs'
 
 export const FLOW = '解手流'
 const STORIES = ['活动关卡', '主线关卡']
 const ORIGIN = 'https://wiki.arkrec.com'
 const PREFIX = 'window.ARKREC_SNAPSHOT = '
 const snapshotFile = fileURLToPath(new URL('../dist/snapshot.js', import.meta.url))
+const flowRecordsFile = fileURLToPath(new URL('../data/flow-records.json', import.meta.url))
 const byCode = new Intl.Collator('zh-CN', { numeric: true })
 const exclusivePath = '/v1/api/exclusive-operators'
 
-const stageKey = row => JSON.stringify([row.story, row.episode, row.operation, row.cn_name])
 const groupKey = (story, episode) => story + '/' + episode
 const relevant = row => STORIES.includes(row.story)
 
@@ -109,8 +111,9 @@ export async function findChanges(request, cursor, maxPages = 32) {
   let lastId = null
   let skip = 0
   const targets = new Map()
+  const newDetails = []
   function result() {
-    return { targets, cursor: headId ? { id: headId, at: recordTime(headId) } : cursor }
+    return { targets, newDetails, cursor: headId ? { id: headId, at: recordTime(headId) } : cursor }
   }
   for (let page = 0; page < maxPages; page += 1) {
     const { data } = await request('/v1/record/latest-records', { skip })
@@ -129,6 +132,8 @@ export async function findChanges(request, cursor, maxPages = 32) {
       if (id !== lastId && row.category.includes(FLOW) && relevant(row)) {
         requireStage(row)
         targets.set(stageKey(row), row)
+        const detail = parseFlowRecord(row)
+        if (detail) newDetails.push(detail)
       }
       lastId = id
     }
@@ -138,7 +143,7 @@ export async function findChanges(request, cursor, maxPages = 32) {
 }
 
 export async function updateSnapshot(snapshot, request, maxPages) {
-  const { targets, cursor } = await findChanges(request, snapshot.cursor, maxPages)
+  const { targets, newDetails, cursor } = await findChanges(request, snapshot.cursor, maxPages)
   let groups = snapshot.groups
   let etag = snapshot.etag
   if (targets.size) {
@@ -163,7 +168,11 @@ export async function updateSnapshot(snapshot, request, maxPages) {
     }
   }
   console.log('本次涉及 ' + targets.size + ' 个有新解手流记录的关卡')
-  return { ...snapshot, groups, cursor, etag, syncedAt: new Date().toISOString() }
+  const records = new Map((snapshot.flowRecords ?? []).map(record => [record.id, record]))
+  for (const detail of newDetails) records.set(detail.id, detail)
+  const flowRecords = [...records.values()]
+  if (targets.size && flowRecords.length) groups = withFlowSteps(groups, flowRecords)
+  return { ...snapshot, groups, cursor, etag, flowRecords, syncedAt: new Date().toISOString() }
 }
 
 function makeClient() {
@@ -188,10 +197,62 @@ function makeClient() {
   }
 }
 
+async function collectFlowPages(directory, records, { partial = false, group } = {}) {
+  const rest = await readdir(directory)
+  const offsets = rest.filter(name => /^\d+\.json$/.test(name))
+    .map(name => Number.parseInt(name, 10)).sort((left, right) => left - right)
+  const first = JSON.parse(await readFile(join(directory, '0.json'), 'utf8'))
+  if (first.count === 0 && Array.isArray(first.records) && !first.records.length) return
+  const pageSize = first.records?.length
+  if (!Number.isInteger(first.count) || !pageSize || first.count < pageSize
+    || (!partial && offsets.at(-1) + pageSize < first.count)
+    || offsets.some((skip, index) => skip !== index * pageSize)) {
+    throw new Error('历史备注分页不齐，目录 ' + directory)
+  }
+
+  for (const skip of offsets) {
+    const page = skip ? JSON.parse(await readFile(join(directory, skip + '.json'), 'utf8')) : first
+    if (!Array.isArray(page.records) || page.records.length < Math.min(pageSize, first.count - skip)) {
+      throw new Error('历史备注分页内容异常，起点 ' + skip)
+    }
+    for (const row of page.records) {
+      if (group && (row.story !== group[0] || row.episode !== group[1])) {
+        throw new Error('发现记录不属于目标活动或主线章节')
+      }
+      const entry = parseFlowRecord(row)
+      if (entry) records.set(entry.id, entry)
+      else if (row.group === '旧纪录') records.delete(row._id)
+    }
+  }
+}
+
+async function loadFlowDetails(directory, partitionsDir) {
+  if (!directory) throw new Error('需要通过 --records-dir 指定历史分页目录')
+  const records = new Map()
+  await collectFlowPages(await realpath(directory), records, { partial: Boolean(partitionsDir) })
+
+  if (partitionsDir) {
+    const path = await realpath(partitionsDir)
+    const targets = JSON.parse(await readFile(join(path, 'targets.json'), 'utf8'))
+    if (!Array.isArray(targets) || !targets.length) throw new Error('缺少历史备注的分组清单')
+    for (const [index, group] of targets.entries()) {
+      await collectFlowPages(join(path, String(index)), records, { group })
+    }
+  }
+  if (!records.size) throw new Error('历史备注中没有可用的活动或主线步数')
+  return [...records.values()]
+}
+
+async function atomicWrite(path, content) {
+  const temp = path + '.' + process.pid + '.tmp'
+  await writeFile(temp, content, { encoding: 'utf8', flag: 'wx' })
+  await rename(temp, path)
+}
+
 async function main() {
   const { positionals, values } = parseArgs({ allowPositionals: true, options: {
     'snapshot-file': { type: 'string' }, 'menu-file': { type: 'string' },
-    'captured-at': { type: 'string' }, 'max-pages': { type: 'string', default: '32' },
+    'captured-at': { type: 'string' }, 'records-dir': { type: 'string' }, 'partitions-dir': { type: 'string' }, 'max-pages': { type: 'string', default: '32' },
   } })
   const [command] = positionals
   const request = makeClient()
@@ -217,13 +278,27 @@ async function main() {
     if (!current?.startsWith(PREFIX)) throw new Error('当前没有有效快照，请先执行 init')
     snapshot = JSON.parse(current.slice(PREFIX.length).trimEnd().replace(/;$/, ''))
     if (snapshot.schema !== 1 || snapshot.flow !== FLOW) throw new Error('快照版本或流派不匹配')
-    snapshot = await updateSnapshot(snapshot, request, maxPages)
+    const records = await readFile(flowRecordsFile, 'utf8').catch(error => {
+      if (error.code !== 'ENOENT') throw error
+      return '[]'
+    })
+    snapshot = await updateSnapshot({ ...snapshot, flowRecords: JSON.parse(records) }, request, maxPages)
+  } else if (command === 'details') {
+    if (!current?.startsWith(PREFIX)) throw new Error('当前没有有效快照，请先执行 init')
+    const previous = JSON.parse(current.slice(PREFIX.length).trimEnd().replace(/;$/, ''))
+    if (previous.schema !== 1 || previous.flow !== FLOW) throw new Error('快照版本或流派不匹配')
+    const flowRecords = await loadFlowDetails(values['records-dir'], values['partitions-dir'])
+    snapshot = { ...previous, flowRecords, groups: withFlowSteps(previous.groups, flowRecords) }
   } else {
-    throw new Error('用法 node scripts/sync.mjs init|update')
+    throw new Error('用法 node scripts/sync.mjs init|update|details')
   }
-  const temp = snapshotFile + '.' + process.pid + '.tmp'
-  await writeFile(temp, PREFIX + JSON.stringify(snapshot) + ';\n', { encoding: 'utf8', flag: 'wx' })
-  await rename(temp, snapshotFile)
+  const { flowRecords, ...publicSnapshot } = snapshot
+  if (flowRecords) {
+    await mkdir(dirname(flowRecordsFile), { recursive: true })
+    // Commit the source index first so retrying from the published cursor can safely deduplicate it.
+    await atomicWrite(flowRecordsFile, JSON.stringify(flowRecords) + '\n')
+  }
+  await atomicWrite(snapshotFile, PREFIX + JSON.stringify(publicSnapshot) + ';\n')
   console.log('已保存快照，共 ' + snapshot.groups.reduce((sum, group) => sum + group.stages.length, 0) + ' 个关卡')
 }
 

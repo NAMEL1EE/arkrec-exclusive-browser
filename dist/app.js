@@ -148,7 +148,17 @@
       const note = makeElement('a', '备注', 'stage-note')
       note.href = './notes.html?' + new URLSearchParams({ group: selected.id, operation: stage.operation, name: stage.cn_name })
       note.setAttribute('aria-label', stage.operation + ' 备注')
-      heading.append(link, makeElement('span', stage.cn_name, 'stage-name'), note)
+      link.title = stage.cn_name
+      const stepValues = modes.filter(mode => stage[mode].length).map(mode => [mode, stage.steps?.[mode] ?? null])
+      const sameSteps = stepValues.length && stepValues.every(([, steps]) => steps === stepValues[0][1])
+      let stepsText = '步数未注明'
+      if (sameSteps && stepValues[0][1] !== null) stepsText = stepValues[0][1] + '步'
+      if (!sameSteps && stepValues.length > 1) {
+        const names = { normal: '普通', challenge: '突袭' }
+        stepsText = stepValues.filter(([, steps]) => steps !== null).map(([mode, steps]) => names[mode] + ' ' + steps + '步').join(' · ')
+          || stepsText
+      }
+      heading.append(link, makeElement('span', stepsText, 'stage-steps'), note)
       row.append(heading)
       for (const mode of modes) {
         const cell = document.createElement('td')

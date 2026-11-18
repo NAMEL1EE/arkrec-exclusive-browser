@@ -9,6 +9,8 @@
   <link rel="stylesheet" href="./style.css">
   <script defer src="./snapshot.js"></script>
   <script defer src="./app.js"></script>
+  <script defer src="./site-config.js"></script>
+  <script defer src="./refresh.js"></script>
 </head>
 <body>
   <header class="header">
@@ -23,7 +25,14 @@
         <h1>解手流独享查询</h1>
         <p>按活动或主线章节查看所有独享关卡和干员。</p>
       </div>
-      <p class="snapshot" id="snapshot"></p>
+      <div class="refresh-controls">
+        <div class="refresh-row">
+          <p class="snapshot" id="snapshot"></p>
+          <button class="refresh-button" id="refresh-button" type="button" disabled aria-describedby="refresh-status">更新数据</button>
+        </div>
+        <p class="refresh-status" id="refresh-status" role="status">正在检查更新服务…</p>
+        <a class="refresh-run" id="refresh-run" target="_blank" rel="noopener" hidden>查看更新进度 ↗</a>
+      </div>
     </div>
     <div class="layout" id="layout" hidden>
       <section class="picker" aria-label="选择活动或主线章节">

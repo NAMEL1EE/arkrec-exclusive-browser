@@ -35,11 +35,13 @@ for (const name of migrations) {
 
 const limits = new Map()
 const env = {
+  REFRESH_PREVIEW: true,
   NOTES_DB: {
     prepare(sql) {
       const statement = database.prepare(sql)
       return { bind: (...args) => ({
         first: async () => statement.get(...args) ?? null,
+        run: async () => statement.run(...args),
         all: async () => ({ results: statement.all(...args) }),
       }) }
     },
@@ -66,7 +68,7 @@ const server = createServer(async (inbound, outgoing) => {
       return
     }
 
-    if (url.pathname === '/api/notes') {
+    if (['/api/notes', '/api/refresh'].includes(url.pathname)) {
       const requestOptions = { method: inbound.method, headers: inbound.headers }
       if (inbound.method === 'POST') {
         requestOptions.body = Readable.toWeb(inbound)

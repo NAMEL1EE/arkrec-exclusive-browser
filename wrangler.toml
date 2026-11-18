@@ -3,7 +3,8 @@ main = "notes/worker.mjs"
 compatibility_date = "2026-11-18"
 
 [vars]
-PAGES_ORIGIN = "https://YOUR-GITHUB-USERNAME.github.io"
+PAGES_ORIGIN = "https://namel1ee.github.io"
+GITHUB_REPOSITORY = "NAMEL1EE/arkrec-exclusive-browser"
 
 [[d1_databases]]
 binding = "NOTES_DB"
