@@ -27,7 +27,7 @@ async function requestWorkflow(repo, token) {
     },
     body: JSON.stringify({ ref: 'main', inputs: { refresh: true, max_pages: 32 } }),
     signal: AbortSignal.timeout(12_000),
-    redirect: 'error',
+    redirect: 'manual',
   })
   if (!response.ok) throw new Error('GitHub dispatch HTTP ' + response.status)
   const details = response.status === 204 ? null : await response.json()
