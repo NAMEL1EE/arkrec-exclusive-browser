@@ -1,0 +1,17 @@
+name = "arkrec-stage-notes"
+main = "notes/worker.mjs"
+compatibility_date = "2026-11-18"
+
+[vars]
+PAGES_ORIGIN = "https://YOUR-GITHUB-USERNAME.github.io"
+
+[[d1_databases]]
+binding = "NOTES_DB"
+database_name = "arkrec-stage-notes"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "notes/migrations"
+
+[[ratelimits]]
+name = "NOTE_WRITES"
+namespace_id = "1001"
+simple = { limit = 6, period = 60 }

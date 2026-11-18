@@ -1,0 +1,78 @@
+name: 发布解手流独享查询
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      refresh:
+        description: 从少人 Wiki 增量更新数据
+        type: boolean
+        default: true
+      max_pages:
+        description: 最新记录最多读取页数（每页间隔至少 1.5 秒）
+        type: number
+        default: 32
+
+concurrency:
+  group: arkrec-pages
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: 更新解手流快照
+        if: github.event_name == 'workflow_dispatch' && inputs.refresh
+        env:
+          MAX_PAGES: ${{ inputs.max_pages }}
+        run: |
+          node scripts/sync.mjs update --max-pages "$MAX_PAGES"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dist/snapshot.js
+          if ! git diff --cached --quiet; then
+            git commit -m "更新解手流独享快照"
+            git push origin HEAD:main
+          fi
+      - uses: actions/configure-pages@v5
+      - name: 配置匿名备注
+        env:
+          NOTES_API_URL: ${{ vars.NOTES_API_URL }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { writeFileSync } from 'node:fs'
+          const { NOTES_API_URL } = process.env
+          if (NOTES_API_URL) {
+            const api = new URL(NOTES_API_URL)
+            if (api.protocol !== 'https:' || api.pathname !== '/api/notes' || api.username || api.password || api.search || api.hash) {
+              throw new Error('NOTES_API_URL 必须是 HTTPS 的 /api/notes 接口地址')
+            }
+            writeFileSync('dist/notes-config.js', 'window.ARKREC_NOTES_CONFIG = ' + JSON.stringify({ apiUrl: api.href }) + '\n')
+          }
+          NODE
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist
+  deploy:
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

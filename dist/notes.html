@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="分享解手流关卡的卡点与打法。">
+  <title>关卡备注 · 解手流独享查询</title>
+  <link rel="icon" type="image/png" sizes="285x345" href="./site-icon.png?v=da292383">
+  <link rel="stylesheet" href="./style.css">
+  <script defer src="./snapshot.js"></script>
+  <script defer src="./notes-config.js"></script>
+  <script defer src="./notes.js"></script>
+</head>
+<body>
+  <header class="header">
+    <div class="shell header-inner">
+      <div class="brand"><img class="brand-mark" src="./site-icon.png?v=da292383" width="30" height="30" alt=""><span>解手流独享查询</span></div>
+      <a id="return" href="./index.html">← 返回查询</a>
+    </div>
+  </header>
+  <main class="shell main notes-shell">
+    <section class="notes-panel" id="notes-panel" aria-labelledby="stage-title" hidden>
+      <p class="group-type" id="stage-group"></p>
+      <h1 id="stage-title"></h1>
+      <p class="notes-hint">可以记录普通或突袭难度、卡在哪一波，以及已经试过的打法。</p>
+      <p class="notes-visibility">姓名和备注对访客公开，提交无需登录。</p>
+      <p class="note-status" id="notes-unavailable" hidden>共享备注服务尚未连接。请通过本地预览或已配置的站点打开。</p>
+      <form class="note-form" id="note-form" hidden>
+        <label class="field-label" for="note-author">备注者姓名</label>
+        <input class="note-author" id="note-author" type="text" maxlength="30" autocomplete="nickname" required placeholder="姓名或昵称">
+        <label class="field-label" for="note-text">留言</label>
+        <textarea id="note-text" maxlength="500" rows="4" required placeholder="例如：突袭开局第二波漏怪，试过提前放技能。"></textarea>
+        <div class="note-actions">
+          <button class="note-save" type="submit" disabled>提交备注</button>
+          <span class="note-status" id="note-status" role="status"></span>
+        </div>
+      </form>
+      <section class="notes-feed" id="notes-feed" aria-labelledby="notes-heading" hidden>
+        <h2 id="notes-heading">玩家备注</h2>
+        <p class="note-status" id="feed-status" role="status"></p>
+        <ol class="note-list" id="note-list"></ol>
+        <button class="note-more" id="note-more" type="button" hidden>查看更多备注</button>
+      </section>
+    </section>
+    <p class="empty" id="missing-stage" hidden>找不到这个关卡。请返回查询后重新打开备注。</p>
+  </main>
+</body>
+</html>
