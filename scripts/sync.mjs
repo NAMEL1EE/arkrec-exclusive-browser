@@ -3,7 +3,7 @@ import { parseArgs } from 'node:util'
 import { setTimeout as wait } from 'node:timers/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join } from 'node:path'
-import { parseFlowRecord, stageKey, withFlowSteps } from './flow-details.mjs'
+import { isOverviewStage, isTrainingStage, parseFlowRecord, stageKey, withFlowSteps } from './flow-details.mjs'
 
 export const FLOW = '解手流'
 const STORIES = ['活动关卡', '主线关卡']
@@ -16,6 +16,7 @@ const exclusivePath = '/v1/api/exclusive-operators'
 
 const groupKey = (story, episode) => story + '/' + episode
 const relevant = row => STORIES.includes(row.story)
+  && (row.story !== '活动关卡' || !isTrainingStage(row.operation))
 
 function requireStage(row) {
   if (![row.story, row.episode, row.operation, row.cn_name].every(value => typeof value === 'string' && value.length)) {
@@ -61,10 +62,26 @@ function getCatalog(menu) {
       const eventCode = story === '活动关卡'
         ? operations?.map(stage => stage.operation?.match(/^([A-Z]{2})-/)?.[1]).find(Boolean) ?? null
         : null
+      const overview = Array.isArray(operations)
+        ? operations.filter(stage => typeof stage.operation === 'string' && stage.operation.length
+          && isOverviewStage(story, stage.operation) && typeof stage.cn_name === 'string' && stage.cn_name.length).map(stage => ({
+          operation: stage.operation,
+          cn_name: stage.cn_name,
+          zone: stage.zone || '',
+          hasChallenge: Boolean(stage.hasChallenge),
+          ...(story === '主线关卡' && index >= 15 && stage.sixStarRuneData?.length && { hasSandbox: true }),
+        }))
+        : undefined
+      const runeStages = story === '主线关卡' && index >= 15 && Array.isArray(operations)
+        ? operations.filter(stage => stage.sixStarRuneData?.length).map(stage => ({
+          operation: stage.operation, cn_name: stage.cn_name,
+        }))
+        : []
       catalog.set(groupKey(story, episode), {
         id: groupKey(story, episode), story, episode,
         chapter: story === '主线关卡' && Number.isInteger(index) ? index : null,
-        eventCode, release: implDate ?? null, stages: [],
+        eventCode, release: implDate ?? null, stages: [], ...(overview && { overview }),
+        ...(runeStages.length && { runeStages }),
       })
     }
   }
@@ -148,23 +165,31 @@ export async function updateSnapshot(snapshot, request, maxPages) {
   let etag = snapshot.etag
   if (targets.size) {
     const result = await request(exclusivePath, undefined, snapshot.etag)
-    if (!result.unchanged) {
-      const catalog = new Map(groups.map(group => [group.id, group]))
-      if ([...targets.values()].some(row => !catalog.has(groupKey(row.story, row.episode)))) {
-        const { data } = await request('/v1/api/menu?lang=0')
-        for (const [id, group] of getCatalog(data)) catalog.set(id, group)
-      }
+    const catalog = new Map(groups.map(group => [group.id, group]))
+    const needsMenu = [...targets.values()].some(row => {
+      const group = catalog.get(groupKey(row.story, row.episode))
+      const isStage = stage => stage.operation === row.operation && stage.cn_name === row.cn_name
+      return !group || (isOverviewStage(row.story, row.operation) && !group.overview?.some(isStage))
+        || (row.story === '主线关卡' && row.sixStarRune?.length === 2 && !group.runeStages?.some(isStage))
+    })
+    if (needsMenu) {
+      const { data } = await request('/v1/api/menu?lang=0')
+      for (const [id, group] of getCatalog(data)) catalog.set(id, group)
+    }
+    if (!result.unchanged || needsMenu) {
       const stages = new Map()
       for (const group of groups) {
         for (const row of group.stages) {
           const stage = { ...row, story: group.story, episode: group.episode }
           const key = stageKey(stage)
-          if (!targets.has(key)) stages.set(key, stage)
+          if (result.unchanged || !targets.has(key)) stages.set(key, stage)
         }
       }
-      for (const [key, stage] of getExclusive(result.data, targets)) stages.set(key, stage)
+      if (!result.unchanged) {
+        for (const [key, stage] of getExclusive(result.data, targets)) stages.set(key, stage)
+        etag = result.etag
+      }
       groups = buildGroups(catalog, stages)
-      etag = result.etag
     }
   }
   console.log('本次涉及 ' + targets.size + ' 个有新解手流记录的关卡')
@@ -249,6 +274,14 @@ async function atomicWrite(path, content) {
   await rename(temp, path)
 }
 
+async function readFlowIndex() {
+  const raw = await readFile(flowRecordsFile, 'utf8').catch(error => {
+    if (error.code !== 'ENOENT') throw error
+    return '[]'
+  })
+  return JSON.parse(raw)
+}
+
 async function main() {
   const { positionals, values } = parseArgs({ allowPositionals: true, options: {
     'snapshot-file': { type: 'string' }, 'menu-file': { type: 'string' },
@@ -278,17 +311,21 @@ async function main() {
     if (!current?.startsWith(PREFIX)) throw new Error('当前没有有效快照，请先执行 init')
     snapshot = JSON.parse(current.slice(PREFIX.length).trimEnd().replace(/;$/, ''))
     if (snapshot.schema !== 1 || snapshot.flow !== FLOW) throw new Error('快照版本或流派不匹配')
-    const records = await readFile(flowRecordsFile, 'utf8').catch(error => {
-      if (error.code !== 'ENOENT') throw error
-      return '[]'
-    })
-    snapshot = await updateSnapshot({ ...snapshot, flowRecords: JSON.parse(records) }, request, maxPages)
+    snapshot = await updateSnapshot({ ...snapshot, flowRecords: await readFlowIndex() }, request, maxPages)
   } else if (command === 'details') {
     if (!current?.startsWith(PREFIX)) throw new Error('当前没有有效快照，请先执行 init')
     const previous = JSON.parse(current.slice(PREFIX.length).trimEnd().replace(/;$/, ''))
     if (previous.schema !== 1 || previous.flow !== FLOW) throw new Error('快照版本或流派不匹配')
-    const flowRecords = await loadFlowDetails(values['records-dir'], values['partitions-dir'])
-    snapshot = { ...previous, flowRecords, groups: withFlowSteps(previous.groups, flowRecords) }
+    const flowRecords = values['records-dir']
+      ? await loadFlowDetails(values['records-dir'], values['partitions-dir'])
+      : await readFlowIndex()
+    if (!flowRecords.length) throw new Error('缺少可用步数，请先导入历史备注')
+    let groups = previous.groups
+    if (values['menu-file']) {
+      const catalog = getCatalog(JSON.parse(await readFile(values['menu-file'], 'utf8')))
+      groups = groups.map(group => ({ ...group, ...catalog.get(group.id), stages: group.stages }))
+    }
+    snapshot = { ...previous, flowRecords, groups: withFlowSteps(groups, flowRecords) }
   } else {
     throw new Error('用法 node scripts/sync.mjs init|update|details')
   }

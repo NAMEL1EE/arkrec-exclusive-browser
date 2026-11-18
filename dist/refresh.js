@@ -18,7 +18,7 @@
     clearTimeout(cooldownTimer)
     const notes = []
     if (result.preview) notes.push('本地演示')
-    if (result.state === 'ready') notes.push('全站每 24 小时可更新一次。')
+    if (result.state === 'ready') notes.push('全站每 ' + result.cooldownMinutes + ' 分钟可更新一次。')
     if (result.state === 'queued') notes.push(result.preview ? '已模拟提交。' : '已提交更新，发布完成后重新载入即可。')
     if (result.state === 'dispatching') notes.push('更新请求正在提交。')
     if (result.state === 'failed') notes.push('更新请求发送失败。')

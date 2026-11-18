@@ -1,4 +1,5 @@
-const COOLDOWN = 24 * 60 * 60 * 1000
+const COOLDOWN_MINUTES = 5
+const COOLDOWN = COOLDOWN_MINUTES * 60 * 1000
 const REPOSITORY = /^[\w.-]+\/[\w.-]+$/
 
 const readState = db => db.prepare('SELECT next_at, state, run_id FROM site_refresh WHERE id = ?').bind(1).first()
@@ -7,6 +8,7 @@ function publicState(row, now, repo, preview) {
   const nextAt = row?.next_at > now ? row.next_at : null
   return {
     nextAt,
+    cooldownMinutes: COOLDOWN_MINUTES,
     state: nextAt ? row.state : 'ready',
     runUrl: nextAt && row.run_id && repo ? 'https://github.com/' + repo + '/actions/runs/' + row.run_id : null,
     preview,

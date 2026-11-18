@@ -8,9 +8,11 @@
 
   const ACTIVITY = '活动关卡'
   const MAIN = '主线关卡'
+  const modeNames = { normal: '普通', challenge: '突袭', sandbox: '沙盘 2 级' }
   const groupSearch = $('group-search')
-  const recordSearch = $('record-search')
-  const difficulty = $('difficulty')
+  const stepsToggle = $('steps-toggle')
+  const overview = $('group-steps')
+  const compactPicker = matchMedia('(max-width: 760px)')
   const tabButtons = [...document.querySelectorAll('[data-story]')]
   const params = new URLSearchParams(location.hash.slice(1))
   const normalize = value => value.normalize('NFKC').toLowerCase().replace(/[\s-]+/g, '')
@@ -23,10 +25,12 @@
   const eventCode = group => group.story === ACTIVITY
     ? group.eventCode ?? group.stages.map(stage => stage.operation.match(/^([A-Z]{2})-/)?.[1]).find(Boolean)
     : null
+  const displayLabel = group => [eventCode(group), label(group)].filter(Boolean).join(' ')
   const yearOf = group => Number.isFinite(Date.parse(group.release)) ? formatYear.format(new Date(group.release)) : ''
   const yearLabel = year => year ? year + ' 年' : '年份待定'
+  const activities = data.groups.filter(group => group.story === ACTIVITY && group.stages.length > 0)
   const activityYears = new Map()
-  for (const group of data.groups.filter(group => group.story === ACTIVITY && group.stages.length > 0)) {
+  for (const group of activities) {
     const year = yearOf(group)
     if (!activityYears.has(year)) activityYears.set(year, [])
     activityYears.get(year).push(group)
@@ -37,6 +41,7 @@
   const savedGroup = data.groups.find(group => group.id === params.get('group') && (group.story !== ACTIVITY || group.stages.length > 0))
   const savedYear = params.get('year')
   let selected = savedGroup ?? (activityYears.has(savedYear) ? null : preferredGroup(activityYears.get(years[0])))
+  let pickerExpanded = !selected
   let story = selected?.story ?? ACTIVITY
   let year = story === ACTIVITY && selected ? yearOf(selected) : activityYears.has(savedYear) ? savedYear : years[0]
 
@@ -57,17 +62,85 @@
     history.replaceState(null, '', url)
   }
 
+  function renderOverview(group) {
+    const stages = group.overview ?? []
+    stepsToggle.hidden = !stages.length
+    setOverviewExpanded(false)
+    if (!stages.length) return
+
+    const modes = Object.keys(modeNames).filter(mode => stages.some(stage => appliesTo(stage, mode)))
+    const headers = ['关卡', ...modes.map(mode => modeNames[mode])].map(label => {
+      const heading = makeElement('th', label)
+      heading.scope = 'col'
+      return heading
+    })
+    $('overview-head').replaceChildren(...headers)
+
+    const fragment = document.createDocumentFragment()
+    for (const stage of stages) {
+      const row = makeStageRow(stage)
+      const heading = makeElement('th', stage.operation)
+      heading.scope = 'row'
+      heading.title = stage.cn_name
+      row.append(heading)
+      for (const mode of modes) {
+        const count = stage.steps?.[mode]
+        const applies = appliesTo(stage, mode)
+        const cell = makeElement('td', Number.isInteger(count) ? count + '步' : applies ? '暂无' : '—')
+        if (!applies) cell.setAttribute('aria-label', '无' + modeNames[mode] + '难度')
+        markSharedStep(cell, stage, mode)
+        row.append(cell)
+      }
+      fragment.append(row)
+    }
+    $('overview-body').replaceChildren(fragment)
+  }
+
+  function setOverviewExpanded(expanded) {
+    overview.hidden = !expanded
+    stepsToggle.setAttribute('aria-expanded', String(expanded))
+  }
+
+  function makeStageRow(stage) {
+    const row = document.createElement('tr')
+    row.dataset.operation = stage.operation
+    row.dataset.stageName = stage.cn_name
+    return row
+  }
+
+  function markSharedStep(element, stage, mode) {
+    const source = stage.steps?.[mode + 'Shared']
+    if (source) element.title = '采用' + modeNames[source] + '通用解'
+  }
+
+  function appliesTo(stage, mode) {
+    if (mode === 'normal' || Number.isInteger(stage.steps?.[mode])) return true
+    return mode === 'challenge' ? stage.hasChallenge : stage.hasSandbox
+  }
+
+  function updatePickerDisclosure() {
+    const body = $('picker-body')
+    const toggle = $('picker-toggle')
+    body.hidden = compactPicker.matches && !pickerExpanded
+    toggle.setAttribute('aria-expanded', String(!body.hidden))
+    $('picker-current').textContent = selected ? displayLabel(selected) : story === ACTIVITY ? '选择活动' : '选择主线章节'
+    $('picker-action').textContent = body.hidden ? '切换 ▾' : '收起 ▴'
+  }
+
   function showSelection() {
+    updatePickerDisclosure()
+    for (const button of $('years').querySelectorAll('[data-year]')) {
+      button.setAttribute('aria-pressed', String(button.dataset.year === year))
+    }
     const results = $('results')
     const prompt = $('selection-prompt')
     results.hidden = !selected
     prompt.hidden = Boolean(selected)
     if (selected) {
-      recordSearch.value = ''
-      difficulty.value = 'all'
+      renderOverview(selected)
       renderRecords()
     } else {
-      prompt.textContent = year ? '请选择 ' + yearLabel(year) + '的活动查看独享。' : '请选择活动查看独享。'
+      prompt.textContent = '请选择活动查看独享。'
     }
     for (const button of $('groups').querySelectorAll('[data-group]')) {
       if (button.dataset.group === selected?.id) button.setAttribute('aria-current', 'true')
@@ -79,24 +152,23 @@
     const isActivity = story === ACTIVITY
     $('years').hidden = !isActivity
     for (const button of tabButtons) button.setAttribute('aria-pressed', String(button.dataset.story === story))
-    for (const button of $('years').querySelectorAll('[data-year]')) {
-      button.setAttribute('aria-pressed', String(button.dataset.year === year))
-    }
     $('picker-title').textContent = isActivity ? '选择活动' : '选择主线章节'
-    groupSearch.setAttribute('aria-label', isActivity ? '筛选活动' : '筛选主线章节')
-    groupSearch.placeholder = isActivity ? '活动名称或关卡代号' : '章节号、名称或关卡代号'
+    groupSearch.setAttribute('aria-label', isActivity ? '筛选活动或关卡' : '筛选章节或关卡')
+    groupSearch.placeholder = isActivity ? '活动或关卡（跨年份）' : '章节或关卡名称、代号'
     renderGroups()
     showSelection()
   }
 
   function renderGroups() {
-    const query = normalize(groupSearch.value)
-    const groups = story === ACTIVITY ? activityYears.get(year) ?? [] : mainGroups
-    const matches = groups.filter(group =>
+    const input = groupSearch.value.normalize('NFKC').toLowerCase().replace(/\s+/g, '')
+    const query = normalize(input)
+    const separatedMainCode = story === MAIN && /^[a-z]*\d+-\d*$/u.test(input)
+    const activityGroups = query ? activities : activityYears.get(year) ?? []
+    const groups = story === ACTIVITY ? activityGroups : mainGroups
+    const matches = separatedMainCode ? [] : groups.filter(group =>
       normalize(label(group)).includes(query)
       || Boolean(eventCode(group)?.toLowerCase().includes(query))
       || (group.chapter !== null && String(group.chapter) === query)
-      || group.stages.some(stage => normalize(stage.operation).includes(query))
     )
     const fragment = document.createDocumentFragment()
     for (const group of matches) {
@@ -111,34 +183,79 @@
       if (code) name.append(makeElement('span', code, 'event-code'))
       name.append(makeElement('span', label(group)))
       button.append(name, count)
-      button.addEventListener('click', () => {
-        if (selected?.id === group.id) return
-        selected = group
-        saveSelection()
-        showSelection()
-      })
+      button.addEventListener('click', () => selectGroup(group))
       fragment.append(button)
     }
-    if (!matches.length) fragment.append(makeElement('p', '没有匹配的活动或章节。', 'empty'))
+    if (query) {
+      const stages = stageMatches(groups, separatedMainCode ? input : query, separatedMainCode)
+      for (const { group, stage } of stages) {
+        const button = makeElement('button', '', 'group-button stage-choice')
+        button.type = 'button'
+        const name = makeElement('span', '', 'group-label')
+        name.append(makeElement('span', stage.operation, 'event-code'), makeElement('span', stage.cn_name))
+        const location = group.story === ACTIVITY ? group.episode + ' · ' + yearLabel(yearOf(group)) : label(group)
+        button.append(name, makeElement('span', location, 'stage-location'))
+        button.addEventListener('click', () => selectGroup(group, stage))
+        fragment.append(button)
+      }
+    }
+    if (!fragment.childElementCount) {
+      const message = story === ACTIVITY ? '没有匹配的活动或关卡。' : '没有匹配的章节或关卡。'
+      fragment.append(makeElement('p', message, 'empty'))
+    }
     $('groups').replaceChildren(fragment)
+  }
+
+  function stageMatches(groups, query, separatedMainCode) {
+    const code = stage => separatedMainCode ? stage.operation.toLowerCase() : normalize(stage.operation)
+    const anchored = story === MAIN && (separatedMainCode || /^\d/.test(query))
+    const matches = groups.flatMap(group => (group.overview ?? group.stages)
+      .filter(stage => {
+        const matchesCode = anchored ? code(stage).startsWith(query) : code(stage).includes(query)
+        return matchesCode || (!separatedMainCode && normalize(stage.cn_name).includes(query))
+      })
+      .map(stage => ({ group, stage })))
+    const exact = matches.filter(({ stage }) => code(stage) === query)
+    return exact.length ? exact : matches
+  }
+
+  function selectGroup(group, stage) {
+    if (selected?.id !== group.id) {
+      selected = group
+      if (group.story === ACTIVITY) year = yearOf(group)
+      saveSelection()
+      showSelection()
+    }
+    if (compactPicker.matches) {
+      pickerExpanded = false
+      updatePickerDisclosure()
+      if (!stage) $('picker-toggle').focus({ preventScroll: true })
+    }
+    if (stage) focusStage(stage)
+  }
+
+  function focusStage(stage) {
+    const isStage = row => row.dataset.operation === stage.operation && row.dataset.stageName === stage.cn_name
+    let row = [...$('records').rows].find(isStage)
+    if (!row) {
+      row = [...$('overview-body').rows].find(isStage)
+      if (!row) return
+      setOverviewExpanded(true)
+    }
+    row.tabIndex = -1
+    row.focus({ preventScroll: true })
+    row.scrollIntoView({ block: 'nearest' })
   }
 
   function renderRecords() {
     $('group-type').textContent = selected.story
-    const code = eventCode(selected)
-    $('group-title').textContent = code ? code + ' ' + label(selected) : label(selected)
+    $('group-title').textContent = displayLabel(selected)
     $('total').textContent = selected.stages.length
-    const query = normalize(recordSearch.value)
-    const modes = ['normal', 'challenge'].filter(mode => difficulty.value === 'all' || mode === difficulty.value)
-    for (const header of document.querySelectorAll('thead [data-mode]')) header.hidden = !modes.includes(header.dataset.mode)
-    const matches = selected.stages.filter(stage =>
-      modes.some(mode => stage[mode].length) &&
-      [stage.operation, stage.cn_name, ...modes.flatMap(mode => stage[mode])].some(value => normalize(value).includes(query))
-    )
-    $('result-count').textContent = '显示 ' + matches.length + ' / ' + selected.stages.length + ' 个关卡'
+    const modes = Object.keys(modeNames).filter(mode => mode !== 'sandbox' || selected.runeStages?.length)
+    for (const header of document.querySelectorAll('#table-wrap thead [data-mode]')) header.hidden = !modes.includes(header.dataset.mode)
     const fragment = document.createDocumentFragment()
-    for (const stage of matches) {
-      const row = document.createElement('tr')
+    for (const stage of selected.stages) {
+      const row = makeStageRow(stage)
       const heading = document.createElement('th')
       heading.scope = 'row'
       const link = makeElement('a', stage.operation + ' ↗', 'stage-code')
@@ -149,30 +266,21 @@
       note.href = './notes.html?' + new URLSearchParams({ group: selected.id, operation: stage.operation, name: stage.cn_name })
       note.setAttribute('aria-label', stage.operation + ' 备注')
       link.title = stage.cn_name
-      const stepValues = modes.filter(mode => stage[mode].length).map(mode => [mode, stage.steps?.[mode] ?? null])
-      const sameSteps = stepValues.length && stepValues.every(([, steps]) => steps === stepValues[0][1])
-      let stepsText = '步数未注明'
-      if (sameSteps && stepValues[0][1] !== null) stepsText = stepValues[0][1] + '步'
-      if (!sameSteps && stepValues.length > 1) {
-        const names = { normal: '普通', challenge: '突袭' }
-        stepsText = stepValues.filter(([, steps]) => steps !== null).map(([mode, steps]) => names[mode] + ' ' + steps + '步').join(' · ')
-          || stepsText
-      }
-      heading.append(link, makeElement('span', stepsText, 'stage-steps'), note)
+      heading.append(link, note)
       row.append(heading)
       for (const mode of modes) {
         const cell = document.createElement('td')
         cell.dataset.mode = mode
-        if (!stage[mode].length) cell.append(makeElement('span', '—', 'no-operator'))
-        for (const operator of stage[mode]) cell.append(makeElement('span', operator, 'chip'))
+        const entries = stage[mode] ?? []
+        if (!entries.length) cell.append(makeElement('span', '—', 'no-operator'))
+        for (const operator of entries) cell.append(makeElement('span', operator, 'chip'))
         row.append(cell)
       }
       fragment.append(row)
     }
     $('records').replaceChildren(fragment)
-    $('table-wrap').hidden = matches.length === 0
-    $('empty').hidden = matches.length !== 0
-    $('empty').textContent = selected.stages.length ? '没有符合当前筛选条件的关卡。' : '该活动或章节暂无解手流独享。'
+    $('table-wrap').hidden = !selected.stages.length
+    $('empty').hidden = Boolean(selected.stages.length)
   }
 
   const lastGroup = new Map()
@@ -196,14 +304,19 @@
       if (value === year) return
       year = value
       selected = null
+      pickerExpanded = true
       groupSearch.value = ''
       saveSelection()
       updatePicker()
     })
     $('years').append(button)
   }
+  compactPicker.addEventListener('change', updatePickerDisclosure)
+  $('picker-toggle').addEventListener('click', () => {
+    pickerExpanded = !pickerExpanded
+    updatePickerDisclosure()
+  })
+  stepsToggle.addEventListener('click', () => setOverviewExpanded(overview.hidden))
   groupSearch.addEventListener('input', renderGroups)
-  recordSearch.addEventListener('input', renderRecords)
-  difficulty.addEventListener('change', renderRecords)
   updatePicker()
 })()
