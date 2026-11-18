@@ -3,6 +3,7 @@ import { parseArgs } from 'node:util'
 import { setTimeout as wait } from 'node:timers/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join } from 'node:path'
+import { rememberExclusiveSample } from './exclusive-history.mjs'
 import { isOverviewStage, isTrainingStage, parseFlowRecord, stageKey, withFlowSteps } from './flow-details.mjs'
 
 export const FLOW = '解手流'
@@ -329,6 +330,7 @@ async function main() {
   } else {
     throw new Error('用法 node scripts/sync.mjs init|update|details')
   }
+  if (command !== 'details') snapshot.exclusiveHistory = rememberExclusiveSample(snapshot)
   const { flowRecords, ...publicSnapshot } = snapshot
   if (flowRecords) {
     await mkdir(dirname(flowRecordsFile), { recursive: true })

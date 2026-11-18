@@ -58,7 +58,7 @@ const env = {
   },
 }
 
-const types = { html: 'text/html; charset=utf-8', js: 'application/javascript; charset=utf-8', css: 'text/css; charset=utf-8', png: 'image/png' }
+const types = { html: 'text/html; charset=utf-8', js: 'application/javascript; charset=utf-8', css: 'text/css; charset=utf-8', png: 'image/png', jpg: 'image/jpeg' }
 const server = createServer(async (inbound, outgoing) => {
   try {
     const url = new URL(inbound.url, 'http://127.0.0.1:' + port)
@@ -82,7 +82,7 @@ const server = createServer(async (inbound, outgoing) => {
     }
 
     const filename = url.pathname === '/' ? 'index.html' : url.pathname.slice(1)
-    if (!/^[\w-]+\.(html|js|css|png)$/.test(filename) || !['GET', 'HEAD'].includes(inbound.method)) {
+    if (!/^[\w-]+\.(html|js|css|png|jpg)$/.test(filename) || !['GET', 'HEAD'].includes(inbound.method)) {
       outgoing.writeHead(404).end()
       return
     }

@@ -138,3 +138,48 @@ td[data-mode=challenge] .chip{background:var(--amber-pale);color:var(--amber)}
   .result-head .total{grid-column:2;grid-row:1}
   .steps-toggle{grid-column:1 / -1;grid-row:2;justify-self:start}
 }
+
+.header-links{display:flex;gap:clamp(8px,2vw,18px);align-items:center}
+.trend-shell{max-width:1040px}
+.trend-panel{padding:clamp(14px,3vw,25px);border:1px solid var(--line);border-radius:16px;background:var(--panel)}
+.trend-filters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:end;gap:10px}
+.trend-picker{position:relative}
+.trend-picker summary{border:1px solid #b8c9de;border-radius:8px;padding:9px 10px;background:var(--panel);cursor:pointer;font-weight:650}
+.trend-picker[open] summary{border-color:#2869bd;background:var(--pale);color:var(--accent)}
+.trend-picker-content{position:absolute;z-index:2;inset-inline-end:0;top:calc(100% + 6px);width:min(430px,calc(100vw - 58px));padding:12px;border:1px solid #b8c9de;border-radius:12px;background:var(--panel);box-shadow:0 8px 24px #17395f24}
+.trend-picker-actions{display:flex;flex-wrap:wrap;gap:6px;margin:9px 0}
+.trend-picker-actions button{border:1px solid var(--line);border-radius:7px;padding:5px 8px;color:var(--accent);background:var(--pale);font-size:.8rem}
+.trend-choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;max-height:min(235px,35vh);overflow-y:auto}
+.trend-choice{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:5px;padding:5px 6px;border-radius:6px;cursor:pointer;font-size:.82rem}
+.trend-choice:hover,.trend-choice:focus-within{background:var(--pale)}
+.trend-choice input{margin:0;width:1rem;height:1rem;accent-color:var(--accent)}
+.trend-choice span{overflow-wrap:anywhere}
+.trend-choice small{color:var(--muted);font-variant-numeric:tabular-nums}
+.trend-caption{font-size:.84rem;color:var(--muted);margin:12px 0 15px}
+.trend-chart{border:1px solid var(--line);border-radius:12px;background:#f7faff;padding:13px 12px 11px}
+.trend-chart-heading{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px 12px;margin:0 6px 4px}
+.trend-zoom-tools{display:flex;align-items:center;flex-wrap:wrap;gap:5px}
+.trend-zoom-tools button{min-height:31px;padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--accent);font-size:.8rem}
+.trend-zoom-tools button:hover:enabled,.trend-zoom-tools button[aria-pressed=true]{border-color:#8eabd2;background:var(--pale)}
+.trend-zoom-tools button:disabled{opacity:.48;cursor:default}
+.trend-zoom-hint{margin:5px 6px 0;color:var(--muted);font-size:.78rem}
+.trend-chart-heading output{color:var(--accent);font-weight:700;font-variant-numeric:tabular-nums}
+#trend-canvas{display:block;width:100%;height:clamp(212px,34vh,318px);touch-action:pan-y}
+#trend-canvas.box-zoom{cursor:crosshair;touch-action:none}
+#trend-position{display:block;width:calc(100% - 55px);margin:1px 16px 9px 39px;padding:0;accent-color:var(--accent)}
+.trend-legend{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(148px,100%),1fr));gap:5px;margin:7px 0 0;padding:0;list-style:none}
+.trend-legend-item{display:flex;align-items:center;gap:5px;min-width:0;width:100%;padding:5px 7px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);text-align:left;font-size:.79rem}
+.trend-legend-item:hover,.trend-legend-item[aria-pressed=true]{border-color:#8eabd2;background:var(--pale)}
+.trend-swatch{flex:none;width:8px;height:8px;border-radius:50%}
+.trend-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trend-value,.trend-delta{flex:none;font-variant-numeric:tabular-nums}
+.trend-delta[data-direction=up]{color:#175d51}
+.trend-delta[data-direction=down]{color:#9d3640}
+@media(max-width:520px){
+  .trend-filters{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .trend-picker{grid-column:1 / -1}
+  .trend-picker-content{width:100%}
+  .trend-chart{padding-inline:7px}
+  .trend-legend{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:460px){.header-links a{font-size:.75rem}}

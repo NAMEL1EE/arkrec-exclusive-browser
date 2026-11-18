@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="查看解手流独享数随时间的变化。">
+  <title>独享数历史 · 解手独享速查</title>
+  <link rel="icon" type="image/png" sizes="285x345" href="./site-icon.png?v=da292383">
+  <link rel="stylesheet" href="./style.css">
+  <script defer src="./snapshot.js"></script>
+  <script defer src="./trend-portraits.js"></script>
+  <script defer src="./trends.js"></script>
+</head>
+<body>
+  <header class="header">
+    <div class="shell header-inner">
+      <div class="brand"><img class="brand-mark" src="./site-icon.png?v=da292383" width="30" height="30" alt=""><span>解手独享速查</span></div>
+      <a href="./index.html">← 返回查询</a>
+    </div>
+  </header>
+  <main class="shell main trend-shell">
+    <div class="intro">
+      <div>
+        <h1>独享数历史</h1>
+        <p>解手流 · 同一干员在同一关卡的每个独享难度计 1 项</p>
+      </div>
+    </div>
+    <section class="trend-panel" id="trend-panel" aria-label="独享数折线图" hidden>
+      <div class="trend-filters">
+        <div>
+          <label for="trend-scope" class="field-label">关卡范围</label>
+          <select id="trend-scope">
+            <option value="all">活动和主线</option>
+            <option value="activity">活动</option>
+            <option value="main">主线</option>
+          </select>
+        </div>
+        <div>
+          <label for="trend-granularity" class="field-label">时间粒度</label>
+          <select id="trend-granularity">
+            <option value="day">每天</option>
+            <option value="sample">更新快照</option>
+          </select>
+        </div>
+        <details class="trend-picker" id="trend-picker">
+          <summary id="trend-picker-summary">干员</summary>
+          <div class="trend-picker-content">
+            <label for="trend-search" class="field-label">搜索干员</label>
+            <input id="trend-search" type="search" placeholder="输入干员名">
+            <div class="trend-picker-actions">
+              <button id="trend-top" type="button">选择前 20 名</button>
+              <button id="trend-clear" type="button">清空选择</button>
+            </div>
+            <div id="trend-choices" class="trend-choices" role="group" aria-label="选择干员"></div>
+            <p class="empty" id="trend-search-empty" hidden>没有匹配的干员。</p>
+          </div>
+        </details>
+      </div>
+      <p class="trend-caption" id="trend-caption"></p>
+      <div class="trend-chart">
+        <div class="trend-chart-heading">
+          <output id="trend-readout" for="trend-position" aria-live="polite"></output>
+          <div id="trend-zoom-tools" class="trend-zoom-tools" role="group" aria-label="图表缩放">
+            <button type="button" id="trend-box-zoom" aria-pressed="false" aria-controls="trend-canvas">框选放大</button>
+            <button type="button" id="trend-zoom-in" aria-label="放大纵轴" title="放大纵轴">＋</button>
+            <button type="button" id="trend-zoom-out" aria-label="缩小纵轴" title="缩小纵轴">−</button>
+            <button type="button" id="trend-zoom-reset">恢复全图</button>
+          </div>
+        </div>
+        <p id="trend-zoom-hint" class="trend-zoom-hint" role="status" hidden></p>
+        <p class="empty" id="trend-no-selection" hidden>选择干员后可查看趋势。</p>
+        <canvas id="trend-canvas" role="img" aria-label="所选干员的解手流独享数变化"></canvas>
+        <input type="range" id="trend-position" aria-label="选择时间点" min="0" step="1">
+        <ul id="trend-legend" class="trend-legend" aria-label="所选日期的干员独享数"></ul>
+      </div>
+    </section>
+    <p class="empty" id="trend-empty">暂无独享历史数据。</p>
+    <noscript><p class="empty">请启用 JavaScript 查看趋势。</p></noscript>
+  </main>
+</body>
+</html>
