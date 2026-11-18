@@ -25,11 +25,16 @@ async function requestWorkflow(repo, token) {
       'User-Agent': 'ArkRec-Exclusive-Refresh/1.0',
       'X-GitHub-Api-Version': '2026-03-10',
     },
-    body: JSON.stringify({ ref: 'main', inputs: { refresh: true, max_pages: 32 } }),
+    // Use the workflow's typed defaults for the incremental update.
+    body: JSON.stringify({ ref: 'main' }),
     signal: AbortSignal.timeout(12_000),
     redirect: 'manual',
   })
-  if (!response.ok) throw new Error('GitHub dispatch HTTP ' + response.status)
+  if (!response.ok) {
+    const error = await response.json().catch(() => null)
+    const reason = typeof error?.message === 'string' ? ': ' + error.message.slice(0, 240) : ''
+    throw new Error('GitHub dispatch HTTP ' + response.status + reason)
+  }
   const details = response.status === 204 ? null : await response.json()
   return Number.isSafeInteger(details?.workflow_run_id) && details.workflow_run_id > 0 ? details.workflow_run_id : null
 }
