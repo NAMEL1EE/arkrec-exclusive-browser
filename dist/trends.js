@@ -1,9 +1,10 @@
 (() => {
   const $ = id => document.getElementById(id)
-  const history = window.ARKREC_SNAPSHOT?.exclusiveHistory ?? []
+  const history = window.ARKREC_SNAPSHOT?.wikiExclusiveHistory?.samples ?? []
   if (!history.length) return
 
   const scope = $('trend-scope')
+  const includeClosed = $('trend-include-closed')
   const granularity = $('trend-granularity')
   const picker = $('trend-picker')
   const search = $('trend-search')
@@ -33,7 +34,6 @@
   const number = new Intl.NumberFormat('zh-CN')
   const deltaNumber = new Intl.NumberFormat('zh-CN', { signDisplay: 'exceptZero' })
   const byName = new Intl.Collator('zh-CN')
-  const scopes = { all: ['activity', 'main'], activity: ['activity'], main: ['main'] }
   const colors = [
     '#175fb4', '#b53b42', '#067b6b', '#8048a8', '#b26209',
     '#217692', '#8f4266', '#466127', '#344dab', '#a4481f',
@@ -45,9 +45,7 @@
   const days = new Map()
   for (const sample of history) {
     days.set(calendarDay.format(new Date(sample.at)), sample)
-    for (const key of scopes.all) {
-      for (const name of Object.keys(sample[key])) names.add(name)
-    }
+    for (const name of Object.keys(sample.includingClosed.all)) names.add(name)
   }
 
   let daily = true
@@ -66,7 +64,8 @@
   let choiceInputs = []
 
   function count(sample, name) {
-    return scopes[scope.value].reduce((total, key) => total + (sample[key][name] ?? 0), 0)
+    const mode = includeClosed.checked ? sample.includingClosed : sample.open
+    return mode[scope.value][name] ?? 0
   }
 
   function topNames() {
@@ -509,6 +508,7 @@
   position.addEventListener('input', renderPoint)
   granularity.addEventListener('change', refreshTimeline)
   scope.addEventListener('change', rankOperators)
+  includeClosed.addEventListener('change', rankOperators)
   search.addEventListener('input', renderChoices)
   choices.addEventListener('change', ({ target }) => {
     showingTop = false

@@ -3,7 +3,7 @@ import { parseArgs } from 'node:util'
 import { setTimeout as wait } from 'node:timers/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join } from 'node:path'
-import { rememberExclusiveSample } from './exclusive-history.mjs'
+import { normalizeOpenEpisodes, updateWikiHistory } from './exclusive-history.mjs'
 import { isOverviewStage, isTrainingStage, parseFlowRecord, stageKey, withFlowSteps } from './flow-details.mjs'
 
 export const FLOW = '解手流'
@@ -14,6 +14,7 @@ const snapshotFile = fileURLToPath(new URL('../dist/snapshot.js', import.meta.ur
 const flowRecordsFile = fileURLToPath(new URL('../data/flow-records.json', import.meta.url))
 const byCode = new Intl.Collator('zh-CN', { numeric: true })
 const exclusivePath = '/v1/api/exclusive-operators'
+const openEpisodesPath = '/v1/user/open-episodes'
 
 const groupKey = (story, episode) => story + '/' + episode
 const relevant = row => STORIES.includes(row.story)
@@ -162,10 +163,18 @@ export async function findChanges(request, cursor, maxPages = 32) {
 
 export async function updateSnapshot(snapshot, request, maxPages) {
   const { targets, newDetails, cursor } = await findChanges(request, snapshot.cursor, maxPages)
+  const episodes = normalizeOpenEpisodes((await request(openEpisodesPath)).data)
+  const previous = snapshot.wikiExclusiveHistory
+  const cached = previous?.samples.length && JSON.stringify(previous.episodes) === JSON.stringify(episodes)
+  // A 304 must cover both consumers when the stage list also needs updating.
+  const conditionalEtag = cached && (!targets.size || previous.etag === snapshot.etag) ? previous.etag : undefined
+  const result = await request(exclusivePath, undefined, conditionalEtag)
+  const syncedAt = new Date().toISOString()
+  const wikiExclusiveHistory = updateWikiHistory(previous, result, episodes, syncedAt, FLOW)
   let groups = snapshot.groups
   let etag = snapshot.etag
   if (targets.size) {
-    const result = await request(exclusivePath, undefined, snapshot.etag)
+    const unchanged = result.unchanged || (result.etag && result.etag === snapshot.etag)
     const catalog = new Map(groups.map(group => [group.id, group]))
     const needsMenu = [...targets.values()].some(row => {
       const group = catalog.get(groupKey(row.story, row.episode))
@@ -177,16 +186,16 @@ export async function updateSnapshot(snapshot, request, maxPages) {
       const { data } = await request('/v1/api/menu?lang=0')
       for (const [id, group] of getCatalog(data)) catalog.set(id, group)
     }
-    if (!result.unchanged || needsMenu) {
+    if (!unchanged || needsMenu) {
       const stages = new Map()
       for (const group of groups) {
         for (const row of group.stages) {
           const stage = { ...row, story: group.story, episode: group.episode }
           const key = stageKey(stage)
-          if (result.unchanged || !targets.has(key)) stages.set(key, stage)
+          if (unchanged || !targets.has(key)) stages.set(key, stage)
         }
       }
-      if (!result.unchanged) {
+      if (!unchanged) {
         for (const [key, stage] of getExclusive(result.data, targets)) stages.set(key, stage)
         etag = result.etag
       }
@@ -198,7 +207,7 @@ export async function updateSnapshot(snapshot, request, maxPages) {
   for (const detail of newDetails) records.set(detail.id, detail)
   const flowRecords = [...records.values()]
   if (targets.size && flowRecords.length) groups = withFlowSteps(groups, flowRecords)
-  return { ...snapshot, groups, cursor, etag, flowRecords, syncedAt: new Date().toISOString() }
+  return { ...snapshot, groups, cursor, etag, flowRecords, syncedAt, wikiExclusiveHistory }
 }
 
 function makeClient() {
@@ -303,9 +312,13 @@ async function main() {
       throw new Error('本地导入需要同时指定 --snapshot-file、--menu-file 和 --captured-at')
     }
     const menu = menuFile ? JSON.parse(await readFile(menuFile, 'utf8')) : (await request('/v1/api/menu?lang=0')).data
-    const capturedAt = values['captured-at'] ?? new Date().toISOString()
+    const episodes = sourceFile ? null : normalizeOpenEpisodes((await request(openEpisodesPath)).data)
     const source = sourceFile ? { data: JSON.parse(await readFile(sourceFile, 'utf8')), etag: null } : await request(exclusivePath)
+    const capturedAt = values['captured-at'] ?? new Date().toISOString()
     snapshot = initialSnapshot(source.data, menu, capturedAt, source.etag)
+    if (episodes) {
+      snapshot.wikiExclusiveHistory = updateWikiHistory(undefined, source, episodes, new Date().toISOString(), FLOW)
+    }
   } else if (command === 'update') {
     const maxPages = Number(values['max-pages'])
     if (!Number.isInteger(maxPages) || maxPages < 1 || maxPages > 100) throw new Error('--max-pages 应为 1 到 100 的整数')
@@ -330,7 +343,7 @@ async function main() {
   } else {
     throw new Error('用法 node scripts/sync.mjs init|update|details')
   }
-  if (command !== 'details') snapshot.exclusiveHistory = rememberExclusiveSample(snapshot)
+  delete snapshot.exclusiveHistory
   const { flowRecords, ...publicSnapshot } = snapshot
   if (flowRecords) {
     await mkdir(dirname(flowRecordsFile), { recursive: true })

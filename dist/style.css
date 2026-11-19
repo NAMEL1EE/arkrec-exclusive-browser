@@ -155,7 +155,9 @@ td[data-mode=challenge] .chip{background:var(--amber-pale);color:var(--amber)}
 .trend-choice input{margin:0;width:1rem;height:1rem;accent-color:var(--accent)}
 .trend-choice span{overflow-wrap:anywhere}
 .trend-choice small{color:var(--muted);font-variant-numeric:tabular-nums}
-.trend-caption{font-size:.84rem;color:var(--muted);margin:12px 0 15px}
+.trend-options{display:flex;flex-wrap:wrap;align-items:center;gap:4px 14px;margin:12px 0 15px}
+.trend-options .trend-choice{display:inline-flex;padding:0}
+.trend-caption{font-size:.84rem;color:var(--muted);margin:0}
 .trend-chart{border:1px solid var(--line);border-radius:12px;background:#f7faff;padding:13px 12px 11px}
 .trend-chart-heading{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px 12px;margin:0 6px 4px}
 .trend-zoom-tools{display:flex;align-items:center;flex-wrap:wrap;gap:5px}

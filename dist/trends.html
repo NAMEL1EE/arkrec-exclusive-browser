@@ -6,10 +6,10 @@
   <meta name="description" content="查看解手流独享数随时间的变化。">
   <title>独享数历史 · 解手独享速查</title>
   <link rel="icon" type="image/png" sizes="285x345" href="./site-icon.png?v=da292383">
-  <link rel="stylesheet" href="./style.css">
-  <script defer src="./snapshot.js"></script>
+  <link rel="stylesheet" href="./style.css?v=wiki-history">
+  <script defer src="./snapshot.js?v=wiki-history"></script>
   <script defer src="./trend-portraits.js"></script>
-  <script defer src="./trends.js"></script>
+  <script defer src="./trends.js?v=wiki-history"></script>
 </head>
 <body>
   <header class="header">
@@ -22,15 +22,15 @@
     <div class="intro">
       <div>
         <h1>独享数历史</h1>
-        <p>解手流 · 同一干员在同一关卡的每个独享难度计 1 项</p>
+        <p>数据来自<a href="https://wiki.arkrec.com/exclusive-records">少人 Wiki 的独享纪录</a> · 解手流</p>
       </div>
     </div>
     <section class="trend-panel" id="trend-panel" aria-label="独享数折线图" hidden>
       <div class="trend-filters">
         <div>
-          <label for="trend-scope" class="field-label">关卡范围</label>
+          <label for="trend-scope" class="field-label">类别</label>
           <select id="trend-scope">
-            <option value="all">活动和主线</option>
+            <option value="all">全部</option>
             <option value="activity">活动</option>
             <option value="main">主线</option>
           </select>
@@ -56,7 +56,10 @@
           </div>
         </details>
       </div>
-      <p class="trend-caption" id="trend-caption"></p>
+      <div class="trend-options">
+        <label class="trend-choice"><input type="checkbox" id="trend-include-closed">显示已关闭活动</label>
+        <p class="trend-caption" id="trend-caption"></p>
+      </div>
       <div class="trend-chart">
         <div class="trend-chart-heading">
           <output id="trend-readout" for="trend-position" aria-live="polite"></output>
@@ -74,7 +77,7 @@
         <ul id="trend-legend" class="trend-legend" aria-label="所选日期的干员独享数"></ul>
       </div>
     </section>
-    <p class="empty" id="trend-empty">暂无独享历史数据。</p>
+    <p class="empty" id="trend-empty">暂无少人 Wiki 独享快照。</p>
     <noscript><p class="empty">请启用 JavaScript 查看趋势。</p></noscript>
   </main>
 </body>
