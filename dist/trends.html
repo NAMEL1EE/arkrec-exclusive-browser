@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="./style.css?v=tall-chart">
   <script defer src="./snapshot.js"></script>
   <script defer src="./trend-portraits.js"></script>
-  <script defer src="./trends.js?v=tall-chart"></script>
+  <script defer src="./trends.js?v=select-exclusive"></script>
 </head>
 <body>
   <header class="header">
@@ -49,6 +49,7 @@
             <input id="trend-search" type="search" placeholder="输入干员名">
             <div class="trend-picker-actions">
               <button id="trend-top" type="button">选择前 20 名</button>
+              <button id="trend-all-exclusive" type="button">选择有独享的干员</button>
               <button id="trend-clear" type="button">清空选择</button>
             </div>
             <div id="trend-choices" class="trend-choices" role="group" aria-label="选择干员"></div>

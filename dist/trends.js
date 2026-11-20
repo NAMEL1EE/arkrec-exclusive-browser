@@ -80,8 +80,12 @@
     return mode[scope.value][name] ?? 0
   }
 
+  function exclusiveNames() {
+    return ranked.filter(name => count(latest, name) > 0)
+  }
+
   function topNames() {
-    return ranked.filter(name => count(latest, name) > 0).slice(0, 20)
+    return exclusiveNames().slice(0, 20)
   }
 
   function element(tag, className, text) {
@@ -137,6 +141,7 @@
     $('trend-caption').textContent = range + '（北京时间） · ' + points.length + unit + changes
     showChanges.hidden = !changed.length
     if (selectionMode === 'top') selection = new Set(topNames())
+    if (selectionMode === 'exclusive') selection = new Set(exclusiveNames())
     if (selectionMode === 'changes') selection = new Set(changed)
   }
 
@@ -675,6 +680,11 @@
   $('trend-top').addEventListener('click', () => {
     selectionMode = 'top'
     selection = new Set(topNames())
+    renderSelection()
+  })
+  $('trend-all-exclusive').addEventListener('click', () => {
+    selectionMode = 'exclusive'
+    selection = new Set(exclusiveNames())
     renderSelection()
   })
   $('trend-clear').addEventListener('click', () => {
