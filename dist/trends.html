@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="./style.css?v=fixed-days">
   <script defer src="./snapshot.js"></script>
   <script defer src="./trend-portraits.js"></script>
-  <script defer src="./trends.js?v=fixed-days"></script>
+  <script defer src="./trends.js?v=split-axis-preview"></script>
 </head>
 <body>
   <header class="header">
@@ -73,6 +73,7 @@
         </div>
         <p id="trend-zoom-hint" class="trend-zoom-hint" role="status" hidden></p>
         <p class="empty" id="trend-no-selection" hidden>选择干员后可查看趋势。</p>
+        <p id="trend-scale-label" class="trend-zoom-hint" hidden></p>
         <canvas id="trend-canvas" role="img" aria-label="所选干员的解手流独享数变化"></canvas>
         <input type="range" id="trend-position" aria-label="选择时间点" min="0" step="1">
         <ul id="trend-legend" class="trend-legend" aria-label="所选日期的干员独享数"></ul>

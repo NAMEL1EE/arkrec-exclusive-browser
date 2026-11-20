@@ -21,6 +21,7 @@
   const zoomOut = $('trend-zoom-out')
   const zoomReset = $('trend-zoom-reset')
   const zoomHint = $('trend-zoom-hint')
+  const scaleLabel = $('trend-scale-label')
   const portraits = window.ARKREC_TREND_PORTRAITS
   const portraitIndices = new Map(portraits?.names.map((name, index) => [name, index]))
   let avatarSheet
@@ -39,6 +40,8 @@
   const axisGutter = 39
   const edgeGutter = 16
   const pointInset = 21
+  const scaleBreak = 30
+  const lowerShare = 0.72
   const colors = [
     '#175fb4', '#b53b42', '#067b6b', '#8048a8', '#b26209',
     '#217692', '#8f4266', '#466127', '#344dab', '#a4481f',
@@ -206,6 +209,12 @@
     const canPanDates = view.first > fullView.first || view.last < fullView.last
     const zoomed = view.timeZoom || verticalZoom
     zoomTools.hidden = !series.length
+    scaleLabel.hidden = !series.length || upperScale() === 1
+    if (!scaleLabel.hidden) {
+      scaleLabel.textContent = view.low < scaleBreak && view.high > scaleBreak
+        ? '分段纵轴 · 30 以下拉开，30 以上压缩'
+        : '独享数'
+    }
     boxButton.setAttribute('aria-pressed', String(boxMode))
     canvas.classList.toggle('box-zoom', boxMode)
     canvas.classList.toggle('can-pan', !boxMode && (canPanDates || verticalZoom))
@@ -215,7 +224,7 @@
     zoomReset.disabled = !zoomed && !boxMode && view.last === fullView.last
     zoomHint.hidden = !series.length || (!boxMode && !zoomed && !canPanDates)
     if (boxMode) zoomHint.textContent = '在图内拖动框选，松开即可放大。'
-    else if (zoomed) zoomHint.textContent = '拖动图表可平移。当前范围 ' + number.format(view.low) + '–' + number.format(view.high) + ' 项'
+    else if (zoomed) zoomHint.textContent = '拖动图表可平移。当前范围 ' + number.format(Math.floor(view.low)) + '–' + number.format(Math.ceil(view.high)) + ' 项'
     else zoomHint.textContent = '左右拖动查看其他日期。'
   }
 
@@ -225,6 +234,20 @@
     boxMode = false
     canvas.classList.remove('is-panning')
     if (pointerId != null && canvas.hasPointerCapture(pointerId)) canvas.releasePointerCapture(pointerId)
+  }
+
+  function upperScale() {
+    return fullView.high >= 2 * scaleBreak
+      ? scaleBreak * (1 - lowerShare) / (lowerShare * (fullView.high - scaleBreak))
+      : 1
+  }
+
+  function axisPosition(value) {
+    return value <= scaleBreak ? value : scaleBreak + (value - scaleBreak) * upperScale()
+  }
+
+  function axisCount(position) {
+    return position <= scaleBreak ? position : scaleBreak + (position - scaleBreak) / upperScale()
   }
 
   function zoomVertical(factor) {
@@ -275,14 +298,15 @@
     const inset = fixedDays ? Math.min(pointInset, chartWidth / 2) : 0
     const top = 16
     const bottom = height - 32
-    const range = high - low
-    const interval = axisStep(range)
-    const yFor = value => bottom - (bottom - top) * (value - low) / range
+    const base = axisPosition(low)
+    const scaledRange = axisPosition(high) - base
+    const yFor = value => bottom - (bottom - top) * (axisPosition(value) - base) / scaledRange
+    const valueAt = y => axisCount(base + (bottom - y) * scaledRange / (bottom - top))
     const xValue = index => daily ? index : points[index].date.getTime()
     const startX = xValue(first)
     const span = xValue(last) - startX
     const xFor = index => span ? left + inset + (chartWidth - 2 * inset) * (xValue(index) - startX) / span : (left + right) / 2
-    plot = { left, right, top, bottom, xFor, dragStep: fixedDays ? daySpacing : chartWidth / Math.max(1, last - first) }
+    plot = { left, right, top, bottom, xFor, valueAt, dragStep: fixedDays ? daySpacing : chartWidth / Math.max(1, last - first) }
     const timelineFits = fixedDays && first === fullView.first && last === fullView.last
     const thumbRadius = 8
     position.style.marginLeft = timelineFits ? (left + inset - thumbRadius) + 'px' : ''
@@ -293,13 +317,31 @@
     context.textBaseline = 'middle'
     context.textAlign = 'right'
     context.fillStyle = '#4c5f77'
-    context.strokeStyle = '#dbe4f0'
-    for (let value = Math.ceil(low / interval) * interval; value <= high; value += interval) {
+    const split = upperScale() < 1 && scaleBreak > low && scaleBreak < high
+    if (split) {
+      drawTicks(low, scaleBreak, 1, yFor(scaleBreak))
+      drawTicks(scaleBreak, high, upperScale(), yFor(scaleBreak))
+      drawTick(scaleBreak, true)
+    } else {
+      drawTicks(low, high, low >= scaleBreak ? upperScale() : 1)
+    }
+
+    function drawTicks(start, end, scale, splitY) {
+      const interval = axisStep(scaledRange / scale)
+      for (let value = Math.ceil(start / interval) * interval; value <= end; value += interval) {
+        if (splitY === undefined || Math.abs(yFor(value) - splitY) >= 17) drawTick(value)
+      }
+    }
+
+    function drawTick(value, boundary = false) {
       const y = yFor(value)
+      context.strokeStyle = boundary ? '#9aafca' : '#dbe4f0'
+      if (boundary) context.setLineDash([3, 3])
       context.beginPath()
       context.moveTo(left, y)
       context.lineTo(right, y)
       context.stroke()
+      context.setLineDash([])
       context.fillText(number.format(value), left - 8, y)
     }
 
@@ -334,12 +376,13 @@
     context.clip()
 
     const zoomed = view.timeZoom || view.low !== fullView.low || view.high !== fullView.high
-    if (zoomed && portraits && !avatarSheet) {
+    const portraitMode = zoomed || upperScale() < 1
+    if (portraitMode && portraits && !avatarSheet) {
       avatarSheet = new Image()
       avatarSheet.addEventListener('load', drawChart, { once: true })
       avatarSheet.src = portraits.file
     }
-    const showPortraits = zoomed && avatarSheet?.naturalWidth
+    const showPortraits = portraitMode && avatarSheet?.naturalWidth
     const markers = []
     const activeLine = series.find(({ name }) => name === highlighted)
     for (const line of series) {
@@ -366,14 +409,24 @@
       context.lineWidth = activeLine && !muted ? 3 : 2
       context.lineJoin = 'round'
       context.beginPath()
-      for (let i = first; i <= last; i += 1) context.lineTo(xFor(i), yFor(values[i]))
+      context.moveTo(xFor(first), yFor(values[first]))
+      for (let i = first + 1; i <= last; i += 1) {
+        const previous = values[i - 1]
+        const current = values[i]
+        if (split && (previous - scaleBreak) * (current - scaleBreak) < 0) {
+          const fraction = (scaleBreak - previous) / (current - previous)
+          const previousX = xFor(i - 1)
+          context.lineTo(previousX + fraction * (xFor(i) - previousX), yFor(scaleBreak))
+        }
+        context.lineTo(xFor(i), yFor(current))
+      }
       context.stroke()
 
       const x = xFor(index)
       const y = yFor(values[index])
       const portraitIndex = portraitIndices.get(name)
-      if (showPortraits && portraitIndex !== undefined && y >= top && y <= bottom) {
-        markers.push({ x, y, color, portraitIndex, muted, focused: name === highlighted })
+      if (showPortraits && !muted && portraitIndex !== undefined && y >= top && y <= bottom) {
+        markers.push({ x, y, color, portraitIndex, focused: name === highlighted })
       } else {
         drawDot(x, y, activeLine && !muted ? 5 : 3.3)
       }
@@ -389,35 +442,18 @@
 
   function drawPortraits(markers, { left, right, top, bottom }) {
     if (!markers.length) return
-    const radius = 12
-    const spacing = 2 * radius + 4
+    const radius = 10
+    const spacing = 2 * radius + 3
     const inset = radius + 2
     const placed = []
 
-    function positions(origin, low, high) {
-      const start = clamp(origin, low, high)
-      const candidates = [start]
-      for (let offset = spacing; start - offset >= low || start + offset <= high; offset += spacing) {
-        if (start - offset >= low) candidates.push(start - offset)
-        if (start + offset <= high) candidates.push(start + offset)
-      }
-      return candidates
-    }
-
-    for (const marker of markers.sort((a, b) => Number(b.focused) - Number(a.focused))) {
-      const xs = positions(marker.x, left + inset, right - inset)
-      const ys = positions(marker.y, top + inset, bottom - inset)
-      let best
-      let bestDistance = Infinity
-      for (const y of ys) {
-        for (const x of xs) {
-          const distance = Math.abs(x - marker.x) + 2 * Math.abs(y - marker.y)
-          if (distance >= bestDistance || placed.some(item => Math.hypot(item.x - x, item.y - y) < spacing)) continue
-          best = { x, y, marker }
-          bestDistance = distance
-        }
-      }
-      if (best) placed.push(best)
+    for (const marker of markers) {
+      const y = clamp(marker.y, top + inset, bottom - inset)
+      const towardCenter = marker.x < (left + right) / 2 ? spacing : -spacing
+      const offsets = [0, towardCenter, -towardCenter]
+      const x = offsets.map(offset => clamp(marker.x + offset, left + inset, right - inset))
+        .find(candidate => placed.every(item => Math.hypot(item.x - candidate, item.y - y) >= spacing))
+      if (x !== undefined) placed.push({ x, y, marker })
       else {
         context.fillStyle = marker.color
         drawDot(marker.x, marker.y, 3.3)
@@ -427,7 +463,7 @@
     context.lineWidth = 1
     for (const { x, y, marker } of placed) {
       if (x === marker.x && y === marker.y) continue
-      context.globalAlpha = marker.muted ? 0.25 : 0.7
+      context.globalAlpha = 0.7
       context.strokeStyle = marker.color
       context.fillStyle = marker.color
       context.beginPath()
@@ -442,13 +478,12 @@
       const sourceX = marker.portraitIndex % columns * cell
       const sourceY = Math.floor(marker.portraitIndex / columns) * cell
       context.save()
-      context.globalAlpha = marker.muted ? 0.32 : 1
+      context.globalAlpha = 1
       context.beginPath()
       context.arc(x, y, radius, 0, Math.PI * 2)
       context.clip()
       context.drawImage(avatarSheet, sourceX, sourceY, cell, cell, x - radius, y - radius, radius * 2, radius * 2)
       context.restore()
-      context.globalAlpha = marker.muted ? 0.32 : 1
       context.strokeStyle = marker.color
       context.lineWidth = marker.focused ? 2.5 : 1.5
       context.beginPath()
@@ -495,10 +530,9 @@
       next.timeZoom ||= next.first !== view.first || next.last !== view.last
     }
     if (Math.abs(start.y - end.y) >= 12) {
-      const valueAt = y => view.low + (plot.bottom - y) * (view.high - view.low) / (plot.bottom - plot.top)
       const minimumSpan = Math.min(2, view.high - view.low)
-      next.low = clamp(Math.floor(valueAt(Math.max(start.y, end.y))), view.low, view.high - minimumSpan)
-      next.high = clamp(Math.ceil(valueAt(Math.min(start.y, end.y))), next.low + minimumSpan, view.high)
+      next.low = clamp(Math.floor(plot.valueAt(Math.max(start.y, end.y))), view.low, view.high - minimumSpan)
+      next.high = clamp(Math.ceil(plot.valueAt(Math.min(start.y, end.y))), next.low + minimumSpan, view.high)
     }
     return next
   }
@@ -510,13 +544,17 @@
     if (!drag.moved && Math.hypot(dx, dy) < 5) return
     drag.moved = true
     const dates = origin.last - origin.first
-    const height = origin.high - origin.low
+    const startY = axisPosition(origin.low)
+    const height = axisPosition(origin.high) - startY
     const first = clamp(origin.first - Math.round(dx / dragStep),
       fullView.first, fullView.last - dates)
-    const low = clamp(origin.low + Math.round(dy * height / (plot.bottom - plot.top)),
-      fullView.low, fullView.high - height)
-    if (first !== view.first || low !== view.low) {
-      setView({ ...origin, first, last: first + dates, low, high: low + height }, index + first - origin.first)
+    const fullBottom = axisPosition(fullView.low)
+    const fullTop = axisPosition(fullView.high)
+    const bottom = clamp(startY + dy * height / (plot.bottom - plot.top), fullBottom, fullTop - height)
+    const low = axisCount(bottom)
+    const high = bottom === fullTop - height ? fullView.high : axisCount(bottom + height)
+    if (first !== view.first || low !== view.low || high !== view.high) {
+      setView({ ...origin, first, last: first + dates, low, high }, index + first - origin.first)
     }
   }
 
