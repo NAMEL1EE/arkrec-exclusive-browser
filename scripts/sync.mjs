@@ -165,7 +165,7 @@ export async function updateSnapshot(snapshot, request, maxPages) {
   const { targets, newDetails, cursor } = await findChanges(request, snapshot.cursor, maxPages)
   const episodes = normalizeOpenEpisodes((await request(openEpisodesPath)).data)
   const previous = snapshot.wikiExclusiveHistory
-  const cached = previous?.samples.length && JSON.stringify(previous.episodes) === JSON.stringify(episodes)
+  const cached = previous?.details && previous.samples.length && JSON.stringify(previous.episodes) === JSON.stringify(episodes)
   // A 304 must cover both consumers when the stage list also needs updating.
   const conditionalEtag = cached && (!targets.size || previous.etag === snapshot.etag) ? previous.etag : undefined
   const result = await request(exclusivePath, undefined, conditionalEtag)

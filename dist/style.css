@@ -158,15 +158,23 @@ td[data-mode=challenge] .chip{background:var(--amber-pale);color:var(--amber)}
 .trend-options{display:flex;flex-wrap:wrap;align-items:center;gap:4px 14px;margin:12px 0 15px}
 .trend-options .trend-choice{display:inline-flex;padding:0}
 .trend-caption{font-size:.84rem;color:var(--muted);margin:0}
+.trend-replay-note{margin:0 0 12px}
 .trend-show-changes{padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--accent);font-size:.82rem}
 .trend-chart{border:1px solid var(--line);border-radius:12px;background:#f7faff;padding:13px 12px 11px}
 .trend-chart-heading{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px 12px;margin:0 6px 4px}
 .trend-zoom-tools{display:flex;align-items:center;flex-wrap:wrap;gap:5px}
-.trend-zoom-tools button{min-height:31px;padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--accent);font-size:.8rem}
+.trend-replay-navigation{display:flex;align-items:center;flex-wrap:wrap;gap:5px;margin:8px 6px}
+.trend-replay-navigation label{display:flex;align-items:center;gap:4px;font-size:.8rem}
+.trend-replay-navigation select{width:auto;min-height:31px;padding:4px 8px;font-size:.8rem}
+.trend-replay-navigation button,.trend-zoom-tools button{min-height:31px;padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--accent);font-size:.8rem}
 .trend-zoom-tools button:hover:enabled,.trend-zoom-tools button[aria-pressed=true]{border-color:#8eabd2;background:var(--pale)}
-.trend-zoom-tools button:disabled{opacity:.48;cursor:default}
+.trend-replay-navigation button:disabled,.trend-zoom-tools button:disabled{opacity:.48;cursor:default}
 .trend-zoom-hint{margin:5px 6px 0;color:var(--muted);font-size:.78rem}
 .trend-chart-heading output{color:var(--accent);font-weight:700;font-variant-numeric:tabular-nums}
+.trend-plot{position:relative}
+.trend-line-tooltip{position:absolute;z-index:1;pointer-events:none;max-width:calc(100% - 8px);padding:6px 9px;border:1px solid var(--line);border-inline-start:3px solid var(--accent);border-radius:7px;background:var(--panel);box-shadow:0 3px 12px #17395f22;font-size:.8rem;color:var(--ink)}
+.trend-line-tooltip strong,.trend-line-tooltip span{display:block}
+.trend-line-tooltip span{color:var(--muted)}
 #trend-canvas{display:block;width:100%;height:clamp(440px,58vh,560px);touch-action:pan-y}
 #trend-canvas.can-pan{cursor:grab;touch-action:none}
 #trend-canvas.pan-dates{touch-action:pan-y}
@@ -175,6 +183,17 @@ td[data-mode=challenge] .chip{background:var(--amber-pale);color:var(--amber)}
 .trend-legend{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(148px,100%),1fr));gap:5px;margin:7px 0 0;padding:0;list-style:none}
 .trend-legend-item{display:flex;align-items:center;gap:5px;min-width:0;width:100%;padding:5px 7px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);text-align:left;font-size:.79rem}
 .trend-legend-item:hover,.trend-legend-item[aria-pressed=true]{border-color:#8eabd2;background:var(--pale)}
+.trend-detail{width:min(520px,calc(100% - 28px));max-height:80vh;overflow:auto;border:1px solid var(--line);border-radius:12px;padding:16px;background:var(--panel);color:var(--ink)}
+.trend-detail::backdrop{background:#17324e70}
+.trend-detail-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.trend-detail-heading h2,.trend-detail p{margin:0 0 9px}
+.trend-detail ul{list-style:none;padding:0;margin:0}
+.trend-detail li{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:7px 0;border-top:1px solid var(--line)}
+.trend-detail li small{color:var(--muted);text-align:right}
+.trend-detail-button{min-width:31px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--accent);font-size:.7rem;padding:3px}
+.trend-legend li{display:flex;gap:3px;min-width:0}
+.trend-legend-item{flex:1;width:auto}
+#trend-canvas.on-portrait{cursor:pointer}
 .trend-swatch{flex:none;width:8px;height:8px;border-radius:50%}
 .trend-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .trend-value,.trend-delta{flex:none;font-variant-numeric:tabular-nums}

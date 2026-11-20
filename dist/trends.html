@@ -6,10 +6,11 @@
   <meta name="description" content="查看解手流独享数随时间的变化。">
   <title>独享数历史 · 解手独享速查</title>
   <link rel="icon" type="image/png" sizes="285x345" href="./site-icon.png?v=da292383">
-  <link rel="stylesheet" href="./style.css?v=tall-chart">
+  <link rel="stylesheet" href="./style.css?v=replay-playback">
   <script defer src="./snapshot.js"></script>
-  <script defer src="./trend-portraits.js"></script>
-  <script defer src="./trends.js?v=select-exclusive"></script>
+  <script defer src="./trend-portraits.js?v=complete-roster"></script>
+  <script defer src="./replay-history.js?v=20261118"></script>
+  <script defer src="./trends.js?v=replay-playback"></script>
 </head>
 <body>
   <header class="header">
@@ -59,9 +60,11 @@
       </div>
       <div class="trend-options">
         <label class="trend-choice"><input type="checkbox" id="trend-include-closed">显示已关闭活动</label>
+        <label id="trend-replay-option" class="trend-choice" hidden><input type="checkbox" id="trend-replay">查看历史估算</label>
         <p class="trend-caption" id="trend-caption"></p>
         <button class="trend-show-changes" id="trend-show-changes" type="button" hidden>只选有变化的干员</button>
       </div>
+      <p class="trend-caption trend-replay-note" id="trend-replay-note" hidden></p>
       <div class="trend-chart">
         <div class="trend-chart-heading">
           <output id="trend-readout" aria-live="polite"></output>
@@ -72,15 +75,38 @@
             <button type="button" id="trend-zoom-reset">恢复全图</button>
           </div>
         </div>
+        <div id="trend-replay-navigation" class="trend-replay-navigation" role="group" aria-label="历史估算月份" hidden>
+          <button id="trend-replay-previous" type="button">上个月</button>
+          <select id="trend-replay-month" aria-label="选择历史估算月份"></select>
+          <button id="trend-replay-next" type="button">下个月</button>
+        </div>
+        <div id="trend-replay-playback" class="trend-replay-navigation" role="group" aria-label="历史区间播放" hidden>
+          <label>起始 <select id="trend-play-start" aria-label="起始月份"></select></label>
+          <label>结束 <select id="trend-play-end" aria-label="结束月份"></select></label>
+          <button id="trend-play-toggle" type="button">播放区间</button>
+        </div>
         <p id="trend-zoom-hint" class="trend-zoom-hint" role="status" hidden></p>
         <p class="empty" id="trend-no-selection" hidden>选择干员后可查看趋势。</p>
         <p id="trend-scale-label" class="trend-zoom-hint" hidden></p>
-        <p class="trend-zoom-hint">右侧头像按最新快照排列</p>
-        <canvas id="trend-canvas" role="img" tabindex="0" aria-label="解手流独享趋势，按左右方向键选择日期，右侧显示最新独享数"></canvas>
+        <p class="trend-zoom-hint">右侧头像对应可见曲线的右端，点击查看当前独享</p>
+        <div class="trend-plot">
+          <canvas id="trend-canvas" role="img" tabindex="0" aria-label="解手流独享趋势，按左右方向键选择日期，头像旁显示可见曲线右端的独享数"></canvas>
+          <div id="trend-line-tooltip" class="trend-line-tooltip" role="tooltip" hidden>
+            <strong></strong><span></span>
+          </div>
+        </div>
         <ul id="trend-legend" class="trend-legend" aria-label="所选日期的干员独享数"></ul>
       </div>
     </section>
     <p class="empty" id="trend-empty">暂无少人 Wiki 独享快照。</p>
+    <dialog id="trend-detail" class="trend-detail" aria-labelledby="trend-detail-title">
+      <div class="trend-detail-heading">
+        <h2 id="trend-detail-title"></h2>
+        <form method="dialog"><button type="submit">关闭</button></form>
+      </div>
+      <p id="trend-detail-count"></p>
+      <ul id="trend-detail-list"></ul>
+    </dialog>
     <noscript><p class="empty">请启用 JavaScript 查看趋势。</p></noscript>
   </main>
 </body>

@@ -12,10 +12,14 @@ export function normalizeOpenEpisodes(data) {
   return [...new Set(data)].sort()
 }
 
-export function captureExclusiveSample(source, openEpisodes, at, flow) {
+export function emptyExclusiveSample(at) {
+  return { at, open: newCounts(), includingClosed: newCounts() }
+}
+
+export function captureExclusiveSample(source, openEpisodes, at, flow, details) {
   if (!Array.isArray(source) || !source.length) throw new Error('源站独享汇总为空或结构异常')
   const episodes = new Set(openEpisodes)
-  const sample = { at, open: newCounts(), includingClosed: newCounts() }
+  const sample = emptyExclusiveSample(at)
   for (const { name, operations } of source) {
     if (typeof name !== 'string' || !name || !Array.isArray(operations)) throw new Error('源站独享汇总结构异常')
     for (const row of operations) {
@@ -26,20 +30,25 @@ export function captureExclusiveSample(source, openEpisodes, at, flow) {
       }
       // Match the Wiki's “按干员” default category and open-episode filters.
       if (hiddenFromAll.has(story)) continue
+      const isOpen = alwaysOpen.has(story) || episodes.has(episode)
+      if (details) {
+        details[name] ??= []
+        details[name].push([story, episode, row.operation, row.cn_name, String(row.operationType ?? '').trim(), isOpen])
+      }
       const scopes = ['all']
       if (story === '活动关卡') scopes.push('activity')
       if (story === '主线关卡') scopes.push('main')
       for (const scope of scopes) {
         const all = sample.includingClosed[scope]
         all[name] = (all[name] ?? 0) + 1
-        if (alwaysOpen.has(story) || episodes.has(episode)) {
+        if (isOpen) {
           const open = sample.open[scope]
           open[name] = (open[name] ?? 0) + 1
         }
       }
     }
   }
-  if (!Object.keys(sample.includingClosed.all).length) throw new Error('源站独享汇总中没有找到' + flow + '数据')
+  if (details && !Object.keys(sample.includingClosed.all).length) throw new Error('源站独享汇总中没有找到' + flow + '数据')
   return sample
 }
 
@@ -64,8 +73,9 @@ function rememberExclusiveSample(sample, history) {
 
 export function updateWikiHistory(previous, result, episodes, at, flow) {
   const history = previous?.samples ?? []
+  const details = result.unchanged ? previous.details : Object.create(null)
   const sample = result.unchanged
     ? { ...history.at(-1), at }
-    : captureExclusiveSample(result.data, episodes, at, flow)
-  return { etag: result.etag, episodes, samples: rememberExclusiveSample(sample, history) }
+    : captureExclusiveSample(result.data, episodes, at, flow, details)
+  return { etag: result.etag, episodes, details, samples: rememberExclusiveSample(sample, history) }
 }
