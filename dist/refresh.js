@@ -12,28 +12,40 @@
   const date = new Intl.DateTimeFormat('zh-CN', {
     timeZone: 'Asia/Shanghai', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
   })
-  let cooldownTimer
+  const updateLabel = button.textContent
+  let checkTimer
+  let action = 'GET'
 
-  function render(result) {
-    clearTimeout(cooldownTimer)
+  function render(result, pendingChecks, unconfirmed) {
     const notes = []
     if (result.preview) notes.push('本地演示')
-    if (result.state === 'ready') notes.push('全站每 ' + result.cooldownMinutes + ' 分钟可更新一次。')
+    if (result.state === 'ready') {
+      if (unconfirmed) notes.push('暂未确认上次更新请求。')
+      notes.push('全站每 ' + result.cooldownMinutes + ' 分钟可更新一次。')
+    }
     if (result.state === 'queued') notes.push(result.preview ? '已模拟提交。' : '已提交更新，发布完成后重新载入即可。')
     if (result.state === 'dispatching') notes.push('更新请求正在提交。')
     if (result.state === 'failed') notes.push('更新请求发送失败。')
     if (result.nextAt) {
       notes.push(date.format(result.nextAt) + '（北京时间）可再次更新。')
-      cooldownTimer = setTimeout(() => { void request('GET') }, Math.max(1000, result.nextAt - Date.now() + 1000))
+      const untilReady = Math.max(1000, result.nextAt - Date.now() + 1000)
+      const checking = result.state === 'dispatching' && pendingChecks > 0
+      checkTimer = setTimeout(() => {
+        void request('GET', { pendingChecks: checking ? pendingChecks - 1 : 3 })
+      }, checking ? Math.min(2500, untilReady) : untilReady)
     }
     status.textContent = notes.join(' ')
+    action = 'POST'
+    button.textContent = updateLabel
     button.disabled = result.state !== 'ready'
     run.hidden = !result.runUrl
     if (result.runUrl) run.href = result.runUrl
   }
 
-  async function request(method) {
+  async function request(method, { retries = 2, pendingChecks = 3, unconfirmed = false } = {}) {
+    clearTimeout(checkTimer)
     button.disabled = true
+    if (method === 'GET' && !unconfirmed) status.textContent = '正在检查更新状态…'
     if (method === 'POST') status.textContent = '正在提交更新请求…'
     try {
       const response = await fetch(endpoint, {
@@ -41,15 +53,26 @@
         ...(method === 'POST' ? { headers: { 'Content-Type': 'application/json' }, body: '{}' } : {}),
       })
       const result = await response.json()
-      if (!('nextAt' in result)) throw new Error(result.error || '暂时无法连接更新服务。')
-      render(result)
-    } catch (error) {
-      status.textContent = method === 'POST'
-        ? '暂未确认更新请求，请重新载入查看状态。'
-        : error.message
+      if (!result || !('nextAt' in result)) throw new Error('更新接口未返回状态')
+      render(result, pendingChecks, unconfirmed)
+    } catch {
+      if (method === 'POST') {
+        status.textContent = '暂未收到提交回执，正在核对更新状态…'
+        checkTimer = setTimeout(() => { void request('GET', { unconfirmed: true }) }, 2000)
+        return
+      }
+      if (retries > 0) {
+        status.textContent = '更新服务响应较慢，正在重新检查…'
+        checkTimer = setTimeout(() => { void request('GET', { retries: retries - 1, pendingChecks, unconfirmed }) }, 2000)
+        return
+      }
+      status.textContent = '暂时无法确认更新状态，请重查状态。'
+      action = 'GET'
+      button.textContent = '重查状态'
+      button.disabled = false
     }
   }
 
-  button.addEventListener('click', () => { void request('POST') })
+  button.addEventListener('click', () => { void request(action) })
   void request('GET')
 })()

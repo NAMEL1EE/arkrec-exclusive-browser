@@ -6,6 +6,7 @@
   const scope = $('trend-scope')
   const includeClosed = $('trend-include-closed')
   const granularity = $('trend-granularity')
+  const showChanges = $('trend-show-changes')
   const picker = $('trend-picker')
   const search = $('trend-search')
   const choices = $('trend-choices')
@@ -51,7 +52,7 @@
   let daily = true
   let ranked = []
   let selection = new Set()
-  let showingTop = true
+  let selectionMode = 'top'
   let highlighted = null
   let points = []
   let series = []
@@ -81,7 +82,7 @@
 
   function rankOperators() {
     ranked = [...names].sort((a, b) => count(latest, b) - count(latest, a) || byName.compare(a, b))
-    if (showingTop) selection = new Set(topNames())
+    renderTimelineSummary()
     renderChoices()
     renderSelection()
   }
@@ -109,10 +110,27 @@
       const x = daily ? Math.floor((timestamp + 28_800_000) / 86_400_000) : timestamp
       return { date: new Date(timestamp), sample, x }
     })
-    $('trend-caption').textContent = daily
-      ? '按北京时间取每天的最新快照。' + (points.length === 1 ? '目前已记录 1 天。' : '')
-      : '按北京时间显示已保存的更新快照。'
+    renderTimelineSummary()
     renderSelection(points.length - 1)
+  }
+
+  function changedNames() {
+    const previous = points.at(-2)?.sample
+    return previous ? ranked.filter(name => count(previous, name) !== count(latest, name)) : []
+  }
+
+  function renderTimelineSummary() {
+    const changed = changedNames()
+    const label = daily ? shortDate : dateTime
+    const end = label.format(points.at(-1).date)
+    const start = label.format(points[0].date)
+    const range = start === end ? end : start + ' – ' + end
+    const unit = daily ? '天' : ' 条快照'
+    const changes = points.length > 1 ? ' · 最近两' + (daily ? '天' : '次') + '有 ' + changed.length + ' 位干员变化' : ''
+    $('trend-caption').textContent = range + '（北京时间） · ' + points.length + unit + changes
+    showChanges.hidden = !changed.length
+    if (selectionMode === 'top') selection = new Set(topNames())
+    if (selectionMode === 'changes') selection = new Set(changed)
   }
 
   function renderSelection(index = Number(position.value)) {
@@ -151,7 +169,7 @@
     const step = axisStep(highest)
     fullView = { first: 0, last: points.length - 1, low: 0, high: Math.ceil(highest / step) * step }
     plot = null
-    stopBoxSelection()
+    stopInteraction()
     setView(fullView, index)
   }
 
@@ -179,19 +197,21 @@
     zoomTools.hidden = !series.length
     boxButton.setAttribute('aria-pressed', String(boxMode))
     canvas.classList.toggle('box-zoom', boxMode)
+    canvas.classList.toggle('can-pan', !boxMode && (timeZoom || verticalZoom))
     zoomIn.disabled = view.high - view.low <= 2
     zoomOut.disabled = !verticalZoom
     zoomReset.disabled = !verticalZoom && !timeZoom && !boxMode
     zoomHint.hidden = !series.length || (!boxMode && !verticalZoom && !timeZoom)
     zoomHint.textContent = boxMode
       ? '在图内拖动框选，松开即可放大。'
-      : '当前独享数范围 ' + number.format(view.low) + '–' + number.format(view.high) + ' 项'
+      : '拖动图表可平移。当前范围 ' + number.format(view.low) + '–' + number.format(view.high) + ' 项'
   }
 
-  function stopBoxSelection() {
+  function stopInteraction() {
     const pointerId = drag?.pointerId
     drag = null
     boxMode = false
+    canvas.classList.remove('is-panning')
     if (pointerId != null && canvas.hasPointerCapture(pointerId)) canvas.releasePointerCapture(pointerId)
   }
 
@@ -202,7 +222,7 @@
     const focus = line?.values[Number(position.value)] ?? (fullHeight ? view.low : (view.low + view.high) / 2)
     const center = clamp(focus, view.low, view.high)
     const low = clamp(Math.round(center - span / 2), fullView.low, fullView.high - span)
-    stopBoxSelection()
+    stopInteraction()
     setView({ ...view, low, high: low + span })
   }
 
@@ -308,7 +328,7 @@
     if (activeLine) drawLine(activeLine, false)
     drawPortraits(markers, plot)
 
-    if (drag) {
+    if (drag?.kind === 'box') {
       const width = drag.end.x - drag.start.x
       const height = drag.end.y - drag.start.y
       context.fillStyle = '#2869bd29'
@@ -461,16 +481,45 @@
     return next
   }
 
+  function panChart(event) {
+    const { origin, start, index } = drag
+    const dx = event.clientX - start.x
+    const dy = event.clientY - start.y
+    if (!drag.moved && Math.hypot(dx, dy) < 5) return
+    drag.moved = true
+    const dates = origin.last - origin.first
+    const height = origin.high - origin.low
+    const first = clamp(origin.first - Math.round(dx * Math.max(1, dates) / (plot.right - plot.left)),
+      fullView.first, fullView.last - dates)
+    const low = clamp(origin.low + Math.round(dy * height / (plot.bottom - plot.top)),
+      fullView.low, fullView.high - height)
+    if (first !== view.first || low !== view.low) {
+      setView({ first, last: first + dates, low, high: low + height }, index + first - origin.first)
+    }
+  }
+
   canvas.addEventListener('pointerdown', event => {
-    if (!boxMode || !plot || !event.isPrimary || event.button !== 0) return
-    const start = chartLocation(event)
-    drag = { start, end: start, pointerId: event.pointerId }
+    if (!plot || !event.isPrimary || event.button !== 0) return
+    if (boxMode) {
+      const start = chartLocation(event)
+      drag = { kind: 'box', start, end: start, pointerId: event.pointerId }
+    } else if (canvas.classList.contains('can-pan')) {
+      drag = {
+        kind: 'pan', start: { x: event.clientX, y: event.clientY }, pointerId: event.pointerId,
+        origin: view, index: Number(position.value), moved: false,
+      }
+      canvas.classList.add('is-panning')
+    } else return
     canvas.setPointerCapture(event.pointerId)
   })
   canvas.addEventListener('pointermove', event => {
     if (drag?.pointerId === event.pointerId) {
-      drag.end = chartLocation(event)
-      drawChart()
+      if (drag.kind === 'pan') {
+        panChart(event)
+      } else {
+        drag.end = chartLocation(event)
+        drawChart()
+      }
     } else if (!boxMode && event.pointerType !== 'touch') choosePoint(event)
   })
   canvas.addEventListener('pointerup', event => {
@@ -478,17 +527,25 @@
       if (!boxMode && event.isPrimary && event.button === 0) choosePoint(event)
       return
     }
+    if (drag.kind === 'pan') {
+      panChart(event)
+      const moved = drag.moved
+      stopInteraction()
+      if (!moved) choosePoint(event)
+      return
+    }
     const next = boxView(drag.start, chartLocation(event))
-    stopBoxSelection()
+    stopInteraction()
     setView(next)
   })
   canvas.addEventListener('lostpointercapture', event => {
     if (drag?.pointerId !== event.pointerId) return
     drag = null
+    canvas.classList.remove('is-panning')
     drawChart()
   })
   boxButton.addEventListener('click', () => {
-    if (boxMode) stopBoxSelection()
+    if (boxMode) stopInteraction()
     else boxMode = true
     renderZoomControls()
     drawChart()
@@ -496,12 +553,12 @@
   zoomIn.addEventListener('click', () => zoomVertical(0.6))
   zoomOut.addEventListener('click', () => zoomVertical(1.75))
   zoomReset.addEventListener('click', () => {
-    stopBoxSelection()
+    stopInteraction()
     setView(fullView)
   })
   zoomTools.addEventListener('keydown', event => {
     if (event.key !== 'Escape' || !boxMode) return
-    stopBoxSelection()
+    stopInteraction()
     renderZoomControls()
     drawChart()
   })
@@ -511,18 +568,23 @@
   includeClosed.addEventListener('change', rankOperators)
   search.addEventListener('input', renderChoices)
   choices.addEventListener('change', ({ target }) => {
-    showingTop = false
+    selectionMode = 'manual'
     if (target.checked) selection.add(target.value)
     else selection.delete(target.value)
     renderSelection()
   })
+  showChanges.addEventListener('click', () => {
+    selectionMode = 'changes'
+    selection = new Set(changedNames())
+    renderSelection(points.length - 1)
+  })
   $('trend-top').addEventListener('click', () => {
-    showingTop = true
+    selectionMode = 'top'
     selection = new Set(topNames())
     renderSelection()
   })
   $('trend-clear').addEventListener('click', () => {
-    showingTop = false
+    selectionMode = 'manual'
     selection.clear()
     renderSelection()
   })

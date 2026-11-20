@@ -158,6 +158,7 @@ td[data-mode=challenge] .chip{background:var(--amber-pale);color:var(--amber)}
 .trend-options{display:flex;flex-wrap:wrap;align-items:center;gap:4px 14px;margin:12px 0 15px}
 .trend-options .trend-choice{display:inline-flex;padding:0}
 .trend-caption{font-size:.84rem;color:var(--muted);margin:0}
+.trend-show-changes{padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--accent);font-size:.82rem}
 .trend-chart{border:1px solid var(--line);border-radius:12px;background:#f7faff;padding:13px 12px 11px}
 .trend-chart-heading{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px 12px;margin:0 6px 4px}
 .trend-zoom-tools{display:flex;align-items:center;flex-wrap:wrap;gap:5px}
@@ -167,6 +168,8 @@ td[data-mode=challenge] .chip{background:var(--amber-pale);color:var(--amber)}
 .trend-zoom-hint{margin:5px 6px 0;color:var(--muted);font-size:.78rem}
 .trend-chart-heading output{color:var(--accent);font-weight:700;font-variant-numeric:tabular-nums}
 #trend-canvas{display:block;width:100%;height:clamp(212px,34vh,318px);touch-action:pan-y}
+#trend-canvas.can-pan{cursor:grab;touch-action:none}
+#trend-canvas.is-panning{cursor:grabbing}
 #trend-canvas.box-zoom{cursor:crosshair;touch-action:none}
 #trend-position{display:block;width:calc(100% - 55px);margin:1px 16px 9px 39px;padding:0;accent-color:var(--accent)}
 .trend-legend{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(148px,100%),1fr));gap:5px;margin:7px 0 0;padding:0;list-style:none}

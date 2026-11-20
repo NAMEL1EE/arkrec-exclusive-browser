@@ -6,10 +6,10 @@
   <meta name="description" content="查看解手流独享数随时间的变化。">
   <title>独享数历史 · 解手独享速查</title>
   <link rel="icon" type="image/png" sizes="285x345" href="./site-icon.png?v=da292383">
-  <link rel="stylesheet" href="./style.css?v=wiki-history">
-  <script defer src="./snapshot.js?v=wiki-history"></script>
+  <link rel="stylesheet" href="./style.css?v=trend-pan">
+  <script defer src="./snapshot.js"></script>
   <script defer src="./trend-portraits.js"></script>
-  <script defer src="./trends.js?v=wiki-history"></script>
+  <script defer src="./trends.js?v=trend-pan"></script>
 </head>
 <body>
   <header class="header">
@@ -59,6 +59,7 @@
       <div class="trend-options">
         <label class="trend-choice"><input type="checkbox" id="trend-include-closed">显示已关闭活动</label>
         <p class="trend-caption" id="trend-caption"></p>
+        <button class="trend-show-changes" id="trend-show-changes" type="button" hidden>只选有变化的干员</button>
       </div>
       <div class="trend-chart">
         <div class="trend-chart-heading">

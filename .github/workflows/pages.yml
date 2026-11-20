@@ -45,13 +45,14 @@ jobs:
             git push origin HEAD:main
           fi
       - uses: actions/configure-pages@v5
-      - name: 配置备注和公开更新服务
+      - name: 配置公开服务和快照版本
         env:
           NOTES_API_URL: ${{ vars.NOTES_API_URL }}
           REFRESH_API_URL: ${{ vars.REFRESH_API_URL }}
         run: |
           node --input-type=module <<'NODE'
-          import { writeFileSync } from 'node:fs'
+          import { createHash } from 'node:crypto'
+          import { readFileSync, writeFileSync } from 'node:fs'
           function apiUrl(value, route) {
             if (!value) return null
             const api = new URL(value)
@@ -65,6 +66,14 @@ jobs:
             refreshUrl: apiUrl(process.env.REFRESH_API_URL, '/api/refresh'),
           }
           writeFileSync('dist/site-config.js', 'window.ARKREC_SITE_CONFIG = ' + JSON.stringify(config) + '\n')
+          const hash = createHash('sha256').update(readFileSync('dist/snapshot.js')).digest('hex').slice(0, 16)
+          for (const file of ['dist/index.html', 'dist/trends.html']) {
+            const html = readFileSync(file, 'utf8')
+              .replace('src="./snapshot.js"', 'src="./snapshot.js?v=' + hash + '"')
+              .replace('href="./trends.html"', 'href="./trends.html?v=' + hash + '"')
+              .replace('href="./index.html"', 'href="./index.html?v=' + hash + '"')
+            writeFileSync(file, html)
+          }
           NODE
       - uses: actions/upload-pages-artifact@v4
         with:
