@@ -5,7 +5,9 @@ import { captureExclusiveSample, emptyExclusiveSample } from './exclusive-histor
 
 const flow = '解手流'
 const shift = 8 * 60 * 60 * 1000
-const monthOf = at => new Date(at + shift).toISOString().slice(0, 7)
+const day = 24 * 60 * 60 * 1_000
+const dayOf = at => Math.floor((at + shift) / day)
+const endOfDay = index => (index + 1) * day - shift - 1
 const recordTime = row => Number.parseInt(row._id.slice(0, 8), 16) * 1_000
 
 function stageKey(row, mode = row.operationType) {
@@ -62,15 +64,13 @@ function sampleAt(stages, episodes, timestamp) {
 export function replay(records, episodes) {
   const stages = new Map()
   const samples = []
-  let previousMonth
+  let previousDay
   for (const row of records) {
-    const at = recordTime(row)
-    const month = monthOf(at)
-    if (previousMonth && previousMonth !== month) {
-      const [year, previousMonthNumber] = previousMonth.split('-').map(Number)
-      samples.push(sampleAt(stages, episodes, Date.UTC(year, previousMonthNumber, 1) - shift - 1))
+    const currentDay = dayOf(recordTime(row))
+    if (previousDay !== undefined && previousDay !== currentDay) {
+      samples.push(sampleAt(stages, episodes, endOfDay(previousDay)))
     }
-    previousMonth = month
+    previousDay = currentDay
     if (!['normal', 'challenge'].includes(row.operationType) || row.group?.includes('失效')
       || row.group === '旧纪录' && /失效/.test(row.remark1 ?? '') || !row.team?.length) continue
     const team = new Set(row.team.map(member => member.name).filter(Boolean))
@@ -82,8 +82,29 @@ export function replay(records, episodes) {
     }
   }
   if (!records.length) return samples
-  samples.push(sampleAt(stages, episodes, recordTime(records.at(-1))))
+  samples.push(sampleAt(stages, episodes, endOfDay(previousDay)))
   return samples
+}
+
+const buckets = [['open', 'all'], ['open', 'activity'], ['open', 'main'],
+  ['includingClosed', 'all'], ['includingClosed', 'activity'], ['includingClosed', 'main']]
+
+function packSamples(samples) {
+  let previous = emptyExclusiveSample(null)
+  return samples.map(sample => {
+    const counts = buckets.map(([mode, scope]) => {
+      const before = previous[mode][scope]
+      const after = sample[mode][scope]
+      const diff = []
+      for (const name of new Set([...Object.keys(before), ...Object.keys(after)])) {
+        const next = after[name] ?? 0
+        if ((before[name] ?? 0) !== next) diff.push(name, next)
+      }
+      return diff
+    })
+    previous = sample
+    return [dayOf(Date.parse(sample.at)), ...counts]
+  }).filter((frame, index, frames) => index === 0 || index === frames.length - 1 || frame.slice(1).some(values => values.length))
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
@@ -97,7 +118,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const firstPage = JSON.parse(await readFile(join(historyDir, '0.json'), 'utf8'))
   if (!records.length || !Number.isInteger(firstPage.count)) throw Error('历史投稿缓存无效')
   const samples = replay(records, wikiExclusiveHistory.episodes)
-  const result = { inputs: records.length, total: firstPage.count, samples }
+  const result = { inputs: records.length, total: firstPage.count, buckets, frames: packSamples(samples) }
   await writeFile(output, 'window.ARKREC_REPLAY_HISTORY = ' + JSON.stringify(result) + ';\n')
-  console.log({ records: result.inputs, archivedTotal: result.total, first: samples[0]?.at, last: samples.at(-1)?.at, months: samples.length })
+  console.log({ records: result.inputs, archivedTotal: result.total, first: samples[0]?.at, last: samples.at(-1)?.at, daysWithRecords: samples.length, frames: result.frames.length })
 }

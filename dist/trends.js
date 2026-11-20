@@ -2,7 +2,6 @@
   const $ = id => document.getElementById(id)
   const wiki = window.ARKREC_SNAPSHOT?.wikiExclusiveHistory
   const history = wiki?.samples ?? []
-  const replay = window.ARKREC_REPLAY_HISTORY
   if (!history.length) return
 
   const scope = $('trend-scope')
@@ -10,14 +9,10 @@
   const granularity = $('trend-granularity')
   const showChanges = $('trend-show-changes')
   const replayToggle = $('trend-replay')
-  const replayNavigation = $('trend-replay-navigation')
-  const replayMonth = $('trend-replay-month')
-  const replayPrevious = $('trend-replay-previous')
-  const replayNext = $('trend-replay-next')
-  const playbackControls = $('trend-replay-playback')
-  const playStart = $('trend-play-start')
-  const playEnd = $('trend-play-end')
-  const playButton = $('trend-play-toggle')
+  const replay = window.ARKREC_REPLAY_DAYS
+  const jumpDate = $('trend-jump-date')
+  const backlog = replay?.samples.filter(sample => Date.parse(sample.at) >= Date.parse('2026-01-01T00:00:00+08:00')) ?? []
+  const transition = backlog.find(sample => sample.source === 'measured')
   const picker = $('trend-picker')
   const search = $('trend-search')
   const choices = $('trend-choices')
@@ -39,11 +34,11 @@
   let avatarSheet
 
   const format = options => new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', ...options })
+  const isoDate = format({ year: 'numeric', month: '2-digit', day: '2-digit' })
+  const inputDate = date => isoDate.format(date).replaceAll('/', '-')
   const calendarDay = format({ year: 'numeric', month: 'numeric', day: 'numeric' })
   const dateTime = format({ year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
   const year = format({ year: 'numeric' })
-  const month = format({ year: 'numeric', month: 'numeric' })
-  const shortMonth = format({ year: '2-digit', month: 'numeric' })
   const shortDate = format({ year: '2-digit', month: 'numeric', day: 'numeric' })
   const day = format({ month: 'numeric', day: 'numeric' })
   const time = format({ hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
@@ -51,7 +46,6 @@
   const deltaNumber = new Intl.NumberFormat('zh-CN', { signDisplay: 'exceptZero' })
   const byName = new Intl.Collator('zh-CN')
   const daySpacing = 56
-  const msPerMonth = 1000
   const axisGutter = 39
   const edgeGutter = 16
   const pointInset = 21
@@ -61,23 +55,21 @@
   const timelineEndInset = 9
   const portraitFont = '11px system-ui'
   const portraitLabelWidth = 25
-  const scaleBreak = 30
-  const lowerShare = 0.8
-  const colors = [
+  const lowerShare = 0.74
+  const fallbackColors = [
     '#175fb4', '#b53b42', '#067b6b', '#8048a8', '#b26209',
     '#217692', '#8f4266', '#466127', '#344dab', '#a4481f',
     '#0c777e', '#ad3d85', '#4e6c14', '#7956ca', '#82611c',
     '#167145', '#536f9a', '#632e72', '#b64a5a', '#126292',
   ]
+  const linePatterns = [[], [7, 4], [2, 3], [9, 3, 2, 3], [4, 3]]
   const latest = history.at(-1)
   const names = new Set()
   const days = new Map()
   for (const sample of history) days.set(calendarDay.format(new Date(sample.at)), sample)
 
-  let playback = null
   let selectedIndex = 0
   let daily = true
-  let estimated = false
   let ranked = []
   let selection = new Set()
   let selectionMode = 'top'
@@ -99,7 +91,7 @@
     return mode[scope.value][name] ?? 0
   }
 
-  function exclusiveNames(end = estimated ? selectedIndex : points.length - 1) {
+  function exclusiveNames(end = points.length - 1) {
     const sample = points[end].sample
     return ranked.filter(name => count(sample, name) > 0)
       .sort((a, b) => count(sample, b) - count(sample, a) || byName.compare(a, b))
@@ -119,18 +111,16 @@
     return node
   }
 
-  function rankOperators() {
+  function rankOperators(preserveView = false) {
     names.clear()
-    const samples = estimated ? replay.samples : history
-    for (const sample of samples) {
+    for (const { sample } of points) {
       for (const name of Object.keys(sample.includingClosed.all)) names.add(name)
     }
     const reference = points.at(-1).sample
     ranked = [...names].sort((a, b) => count(reference, b) - count(reference, a) || byName.compare(a, b))
-    stopPlayback()
     renderTimelineSummary()
     renderChoices()
-    renderSelection()
+    renderSelection(selectedIndex, preserveView ? view : undefined)
   }
 
   function renderChoices() {
@@ -146,7 +136,7 @@
       return { label, input, total }
     })
     choices.replaceChildren(...choiceInputs.map(({ label }) => label))
-    updateChoiceCounts(estimated ? (view?.last ?? selectedIndex) : points.length - 1)
+    updateChoiceCounts(points.length - 1)
     $('trend-search-empty').hidden = choiceInputs.length > 0
   }
 
@@ -156,33 +146,17 @@
   }
 
   function refreshTimeline() {
-    stopPlayback()
-    estimated = Boolean(replay?.samples.length && replayToggle.checked)
-    granularity.disabled = estimated
-    daily = estimated || granularity.value === 'day'
-    const samples = estimated ? replay.samples : daily ? [...days.values()] : history
+    daily = granularity.value === 'day'
+    const samples = daily && transition ? backlog : daily ? [...days.values()] : history
     points = samples.map(sample => ({ date: new Date(sample.at), sample }))
-    selectedIndex = estimated ? 0 : points.length - 1
-    replayNavigation.hidden = !estimated
-    playbackControls.hidden = !estimated
-    if (estimated && !replayMonth.options.length) {
-      const options = points.map(({ date }, index) => {
-        const option = element('option', '', month.format(date))
-        option.value = String(index)
-        return option
-      })
-      replayMonth.replaceChildren(...options)
-      playStart.replaceChildren(...options.map(option => option.cloneNode(true)))
-      playEnd.replaceChildren(...options.map(option => option.cloneNode(true)))
-      playEnd.value = String(points.length - 1)
+    selectedIndex = points.length - 1
+    $('trend-backfill').hidden = !daily || !transition
+    if (daily && transition) {
+      jumpDate.min = inputDate(points[0].date)
+      jumpDate.max = inputDate(points.at(-1).date)
+      $('trend-backfill-note').textContent = calendarDay.format(new Date(transition.at)) + ' 起使用实测快照，之前为回算估值。'
     }
     view = null
-    const note = $('trend-replay-note')
-    note.hidden = !estimated
-    if (estimated) {
-      note.textContent = '按收录时间回算，通常取每月底。缓存覆盖 ' + number.format(replay.inputs) + ' / ' + number.format(replay.total)
-        + ' 条投稿。开放活动按当前名单筛选，早期数值为估算。'
-    }
     rankOperators()
   }
 
@@ -193,36 +167,44 @@
 
   function renderTimelineSummary() {
     const changed = changedNames()
-    const label = estimated ? month : daily ? shortDate : dateTime
+    const label = daily ? shortDate : dateTime
     const end = label.format(points.at(-1).date)
     const start = label.format(points[0].date)
     const range = start === end ? end : start + ' – ' + end
-    const unit = estimated ? ' 个月' : daily ? '天' : ' 条快照'
-    const changes = points.length > 1 ? ' · 最近两' + (estimated ? '个月' : daily ? '天' : '次') + '有 ' + changed.length + ' 位干员变化' : ''
+    const unit = daily ? '天' : ' 条快照'
+    const changes = points.length > 1 ? ' · 最近两' + (daily ? '天' : '次') + '有 ' + changed.length + ' 位干员变化' : ''
     $('trend-caption').textContent = range + '（北京时间） · ' + points.length + unit + changes
     showChanges.hidden = !changed.length
-    applyRankedSelection(estimated ? (view?.last ?? selectedIndex) : points.length - 1)
+    applyRankedSelection(points.length - 1)
     if (selectionMode === 'changes') selection = new Set(changed)
   }
 
-  function renderSelection(index = selectedIndex, end = estimated ? (view?.last ?? index) : points.length - 1, targetView) {
+  function renderSelection(index = selectedIndex, previousView) {
     for (const { input } of choiceInputs) input.checked = selection.has(input.value)
     $('trend-picker-summary').textContent = '干员 · 已选 ' + selection.size
-    series = ranked.filter(name => selection.has(name)).map((name, index) => ({
-      name,
-      color: colors[index % colors.length],
-      values: points.map(({ sample }) => count(sample, name)),
-    }))
+    const colorUse = new Map()
+    series = ranked.filter(name => selection.has(name)).map((name, index) => {
+      const color = portraits?.colors?.[portraitIndices.get(name)] ?? fallbackColors[index % fallbackColors.length]
+      const use = colorUse.get(color) ?? 0
+      colorUse.set(color, use + 1)
+      return {
+        name, color,
+        pattern: linePatterns[use % linePatterns.length],
+        light: isLightColor(color),
+        values: points.map(({ sample }) => count(sample, name)),
+      }
+    })
     if (!selection.has(highlighted)) highlighted = null
     canvas.hidden = !series.length
     legend.hidden = !series.length
     $('trend-no-selection').hidden = series.length > 0
 
-    legendRows = series.map(({ name, color }) => {
+    legendRows = series.map(({ name, color, pattern }) => {
       const item = element('li')
       const button = element('button', 'trend-legend-item')
       const swatch = element('span', 'trend-swatch')
-      swatch.style.backgroundColor = color
+      swatch.style.borderColor = color
+      if (pattern.length) swatch.style.borderTopStyle = pattern[0] <= 2 ? 'dotted' : 'dashed'
       swatch.setAttribute('aria-hidden', 'true')
       const value = element('strong', 'trend-value')
       const delta = element('small', 'trend-delta')
@@ -241,18 +223,43 @@
       return { name, item, button, value, delta }
     })
     legend.replaceChildren(...legendRows.map(({ item }) => item))
-    const highest = series.reduce((max, line) => Math.max(max, ...line.values), 1)
-    const step = axisStep(highest)
-    fullView = { first: 0, last: points.length - 1, low: 0, high: Math.ceil(highest / step) * step, timeZoom: false }
+    const dates = { first: 0, last: points.length - 1 }
+    fullView = { ...dates, ...fitCountAxis(dates), timeZoom: false, verticalZoom: false }
     plot = null
-    if (!targetView) stopInteraction()
-    setView(targetView ?? { ...fullView, last: end }, index, false)
+    stopInteraction()
+    setView(previousView ? { ...fullView, first: previousView.first, last: previousView.last, timeZoom: previousView.timeZoom } : fullView, index)
   }
 
-  function axisStep(range) {
-    const target = Math.max(1, range / 5)
+  function isLightColor(color) {
+    const [r, g, b] = color.slice(1).match(/../g).map(channel => parseInt(channel, 16))
+    return (r * 0.2126 + g * 0.7152 + b * 0.0722) >= 190
+  }
+
+  function axisStep(range, intervals = 5) {
+    const target = Math.max(1, range / intervals)
     const power = 10 ** Math.floor(Math.log10(target))
-    return [1, 2, 5, 10].find(step => step * power >= target) * power
+    return [1, 2, 2.5, 5, 10].map(step => step * power)
+      .find(step => Number.isInteger(step) && step >= target)
+  }
+
+  function fitCountAxis({ first, last }) {
+    const peaks = series.map(({ values }) => {
+      let peak = 0
+      for (let i = first; i <= last; i += 1) peak = Math.max(peak, values[i])
+      return peak
+    }).filter(value => value > 0).sort((a, b) => a - b)
+    const highest = peaks.at(-1) ?? 1
+    const step = axisStep(highest)
+    const high = Math.ceil((highest + 1) / step) * step
+
+    // Expand the band that holds most visible lines when a few lines sit well above it.
+    const cluster = peaks[Math.floor((peaks.length - 1) * 0.7)] ?? 0
+    const breakStep = axisStep(cluster)
+    const breakAt = Math.max(3, Math.ceil(cluster / breakStep) * breakStep)
+    const factor = peaks.length >= 4 && highest >= breakAt * 2.5
+      ? breakAt * (1 - lowerShare) / (lowerShare * (high - breakAt))
+      : 1
+    return { low: 0, high, breakAt, factor }
   }
 
   const clamp = (value, low, high) => Math.min(high, Math.max(low, value))
@@ -263,98 +270,53 @@
     return clamp(Math.floor(space / portraitPitch), 0, 9)
   }
 
-  function replayRange(first, last) {
-    const values = []
-    for (const line of series) {
-      for (let index = first; index <= last; index += 1) {
-        if (line.values[index] > 0) values.push(line.values[index])
-      }
-    }
-    values.sort((a, b) => a - b)
-    const highest = values.at(-1) ?? 0
-    const step = axisStep(highest * 1.08)
-    const high = Math.max(2, Math.ceil(highest * 1.08 / step) * step)
-    const typical = values[Math.ceil(values.length * 0.75) - 1] ?? 0
-    const breakStep = axisStep(typical)
-    const suggestedBreak = Math.max(4, Math.ceil(typical / breakStep) * breakStep)
-    const breakAt = values.length >= 4 && highest >= 3 * suggestedBreak ? suggestedBreak : 0
-    return { low: 0, high, autoHigh: high, breakAt }
-  }
-
   function chartScale(range, height) {
-    const { low, high } = range
-    const breakAt = estimated ? range.breakAt : scaleBreak
-    const factor = upperScale(range)
+    const { low, high, breakAt, factor } = range
     const top = 24
     const bottom = height - 32
     const base = axisPosition(low, breakAt, factor)
     const scaledRange = axisPosition(high, breakAt, factor) - base
     return {
-      top, bottom, scaledRange, breakAt, factor,
+      top, bottom, breakAt, factor,
       yFor: value => bottom - (bottom - top) * (axisPosition(value, breakAt, factor) - base) / scaledRange,
       valueAt: y => axisCount(base + (bottom - y) * scaledRange / (bottom - top), breakAt, factor),
     }
   }
 
-  function playbackPortraitWidth(width) {
-    const lanes = portraitLanes(width)
-    return lanes ? portraitGap + portraitLabelWidth + lanes * portraitPitch : 0
+  function fitView(next) {
+    return next.verticalZoom ? next : { ...next, ...fitCountAxis(next) }
   }
 
   function dailyWindow(next) {
     const width = canvas.clientWidth
-    const { yFor } = chartScale(next, canvas.clientHeight)
-    const portraitsWidth = playback ? playbackPortraitWidth(width) : layoutPortraits(next, width, yFor).width
-    const space = width - axisGutter - edgeGutter - portraitsWidth - pointInset - timelineEndInset
-    const capacity = Math.max(1, Math.floor(space / daySpacing) + 1)
-    const first = Math.max(fullView.first, next.last - capacity + 1)
-    return { ...next, first }
-  }
-
-  function fitReplayView(next) {
-    const fixed = !next.timeZoom
-    const width = canvas.clientWidth
+    const height = canvas.clientHeight
     const space = width - axisGutter - edgeGutter - pointInset - timelineEndInset
-    let first = fixed ? Math.max(playback?.first ?? fullView.first, next.last - Math.max(0, Math.floor(space / daySpacing))) : next.first
-    while (true) {
-      const range = next.lockY ? next : replayRange(first, next.last)
-      const fitted = { ...next, ...range, first }
-      if (!fixed || first === next.last || dailyWindow(fitted).first <= first) return fitted
-      first += 1
+    let first = Math.max(fullView.first, next.last - Math.max(0, Math.floor(space / daySpacing)))
+    for (; first < next.last; first += 1) {
+      const candidate = fitView({ ...next, first })
+      const { yFor } = chartScale(candidate, height)
+      const portraitsWidth = layoutPortraits(candidate, width, yFor).width
+      if (space - portraitsWidth >= daySpacing * (next.last - first)) return candidate
     }
+    return fitView({ ...next, first })
   }
 
-  function setView(next, index = selectedIndex, updateSelection = true) {
-    if (estimated && updateSelection && next.last !== view?.last && ['top', 'exclusive'].includes(selectionMode)) {
-      applyRankedSelection(next.last)
-      renderSelection(index, next.last, next)
-      return
-    }
-    view = estimated ? fitReplayView(next) : daily && !next.timeZoom ? dailyWindow(next) : next
+  function setView(next, index = selectedIndex) {
+    view = daily && !next.timeZoom ? dailyWindow(next) : fitView(next)
     selectedIndex = clamp(index, view.first, view.last)
-    if (estimated) {
-      replayMonth.value = String(view.last)
-      replayPrevious.disabled = view.last === fullView.first
-      replayNext.disabled = view.last === fullView.last
-    }
-    updateChoiceCounts(estimated ? view.last : fullView.last)
+    updateChoiceCounts(fullView.last)
     renderZoomControls()
     renderPoint()
   }
 
   function renderZoomControls() {
-    const verticalZoom = estimated ? Boolean(view.lockY) : view.low !== fullView.low || view.high !== fullView.high
+    const { verticalZoom, breakAt, factor } = view
     const canPanDates = view.first > fullView.first || view.last < fullView.last
     const zoomed = view.timeZoom || verticalZoom
     zoomTools.hidden = !series.length
-    const breakAt = estimated ? view.breakAt : scaleBreak
-    const split = upperScale(view) < 1 && view.low < breakAt && view.high > breakAt
-    scaleLabel.hidden = !series.length || (!estimated && upperScale(view) === 1)
-    if (!scaleLabel.hidden) {
-      scaleLabel.textContent = split
-        ? '分段纵轴 · ' + breakAt + ' 以下拉开，以上压缩'
-        : estimated ? (verticalZoom ? '独享数 · 已缩放' : '独享数 · 随可见月份调整') : '独享数'
-    }
+    const split = factor < 1 && view.low < breakAt && view.high > breakAt
+    scaleLabel.hidden = !series.length
+    scaleLabel.textContent = split ? '独享数 · ' + number.format(breakAt) + ' 以下放大显示' : '独享数'
     boxButton.setAttribute('aria-pressed', String(boxMode))
     canvas.classList.toggle('box-zoom', boxMode)
     canvas.classList.toggle('can-pan', !boxMode && (canPanDates || verticalZoom))
@@ -376,18 +338,6 @@
     if (pointerId != null && canvas.hasPointerCapture(pointerId)) canvas.releasePointerCapture(pointerId)
   }
 
-  function upperScale(range) {
-    if (estimated) {
-      const share = 0.72
-      return range.breakAt
-        ? range.breakAt * (1 - share) / (share * (range.autoHigh - range.breakAt))
-        : 1
-    }
-    return fullView.high >= 2 * scaleBreak
-      ? scaleBreak * (1 - lowerShare) / (lowerShare * (fullView.high - scaleBreak))
-      : 1
-  }
-
   function axisPosition(value, breakAt, factor) {
     return value <= breakAt ? value : breakAt + (value - breakAt) * factor
   }
@@ -397,22 +347,27 @@
   }
 
   function zoomVertical(factor) {
-    stopPlayback()
-    const ceiling = estimated ? view.autoHigh : fullView.high
+    const ceiling = fullView.high
     const span = clamp(Math.round((view.high - view.low) * factor), Math.min(2, ceiling), ceiling)
     const line = series.find(item => item.name === highlighted)
-    const fullHeight = view.low === fullView.low && view.high === ceiling
-    const focus = line?.values[selectedIndex] ?? (fullHeight ? view.low : (view.low + view.high) / 2)
+    const focus = line?.values[selectedIndex] ?? (view.verticalZoom ? (view.low + view.high) / 2 : view.low)
     const center = clamp(focus, view.low, view.high)
     const low = clamp(Math.round(center - span / 2), fullView.low, ceiling - span)
+    const verticalZoom = factor < 1 || span < fitCountAxis(view).high
     stopInteraction()
-    setView({ ...view, low, high: low + span, lockY: estimated && span < ceiling })
+    setView({ ...view, low, high: low + span, verticalZoom })
+  }
+
+  function pointSource(sample) {
+    return sample.source === 'estimate' ? '历史估算' : sample.source === 'carried' ? '沿用前次快照' : ''
   }
 
   function renderPoint() {
     const index = selectedIndex
-    const { date } = points[index]
-    readout.textContent = (estimated ? month : daily ? calendarDay : dateTime).format(date)
+    const { date, sample } = points[index]
+    const source = pointSource(sample)
+    readout.textContent = (daily ? calendarDay : dateTime).format(date) + (source ? ' · ' + source : '')
+    if (daily && transition) jumpDate.value = inputDate(date)
     for (const [lineIndex, { name, button, value, delta }] of legendRows.entries()) {
       const values = series[lineIndex].values
       value.textContent = number.format(values[index])
@@ -474,11 +429,11 @@
 
     const { first, last, low, high } = view
     const fixedDays = daily && !view.timeZoom
-    const { top, bottom, scaledRange, breakAt, factor, yFor, valueAt } = chartScale(view, height)
+    const { top, bottom, breakAt, factor, yFor, valueAt } = chartScale(view, height)
     const portraitLayout = layoutPortraits(view, width, yFor)
-    const portraitWidth = playback ? playbackPortraitWidth(width) : portraitLayout.width
+    const portraitWidth = portraitLayout.width
     const plotWidth = width - axisGutter - edgeGutter - portraitWidth
-    const chartWidth = fixedDays && !estimated ? Math.min(plotWidth, daySpacing * (last - first) + pointInset + timelineEndInset) : plotWidth
+    const chartWidth = fixedDays ? Math.min(plotWidth, daySpacing * (last - first) + pointInset + timelineEndInset) : plotWidth
     const left = axisGutter
     const right = left + chartWidth
     const startInset = fixedDays ? Math.min(pointInset, chartWidth / 2) : 0
@@ -486,9 +441,7 @@
     const xValue = index => daily ? index : points[index].date.getTime()
     const startX = xValue(first)
     const span = xValue(last) - startX
-    const progress = playback ? playback.position - last : 0
     const xFor = index => {
-      if (estimated && fixedDays) return right - endInset - (last - index + progress) * daySpacing
       return span ? left + startInset + (chartWidth - startInset - endInset) * (xValue(index) - startX) / span : (left + right) / 2
     }
     plot = { left, right, top, bottom, xFor, valueAt, dragStep: fixedDays ? daySpacing : chartWidth / Math.max(1, last - first) }
@@ -500,17 +453,18 @@
     context.fillStyle = '#4c5f77'
     const split = factor < 1 && breakAt > low && breakAt < high
     if (split) {
-      drawTicks(low, breakAt, 1, yFor(breakAt))
-      drawTicks(breakAt, high, factor, yFor(breakAt))
+      drawTicks(low, breakAt, yFor(breakAt))
+      drawTicks(breakAt, high, yFor(breakAt))
       drawTick(breakAt, true)
     } else {
-      drawTicks(low, high, low >= breakAt ? factor : 1)
+      drawTicks(low, high)
     }
 
-    function drawTicks(start, end, scale, splitY) {
-      const interval = axisStep(scaledRange / scale)
+    function drawTicks(start, end, splitY) {
+      const intervals = Math.max(1, Math.round(Math.abs(yFor(start) - yFor(end)) / 50))
+      const interval = axisStep(end - start, intervals)
       for (let value = Math.ceil(start / interval) * interval; value <= end; value += interval) {
-        if (splitY === undefined || Math.abs(yFor(value) - splitY) >= 17) drawTick(value)
+        if (splitY === undefined || Math.abs(yFor(value) - splitY) >= 24) drawTick(value)
       }
     }
 
@@ -530,25 +484,43 @@
     context.beginPath()
     context.moveTo(left, top)
     context.lineTo(left, bottom)
+    context.lineTo(right, bottom)
     context.stroke()
 
     const tickCount = fixedDays ? last - first + 1 : Math.min(last - first + 1, width < 470 ? 3 : 6)
     const start = points[first].date
     const end = points[last].date
     let dateLabel = day
-    if (estimated) dateLabel = shortMonth
-    else if (!daily && calendarDay.format(start) === calendarDay.format(end)) dateLabel = time
+    if (!daily && calendarDay.format(start) === calendarDay.format(end)) dateLabel = time
     else if (year.format(start) !== year.format(end)) dateLabel = shortDate
     let previousTick = -Infinity
     for (let tick = 0; tick < tickCount; tick += 1) {
       const tickIndex = first + Math.round(tick * (last - first) / Math.max(1, tickCount - 1))
       const x = xFor(tickIndex)
-      if (playback && x < left + 14) continue
       const interior = tick > 0 && tick < tickCount - 1
       if (!fixedDays && interior && (x - previousTick < 62 || right - x < 62)) continue
+      context.beginPath()
+      context.moveTo(x, bottom)
+      context.lineTo(x, bottom + 4)
+      context.stroke()
       context.textAlign = fixedDays || tickCount === 1 ? 'center' : tick === 0 ? 'left' : tick === tickCount - 1 ? 'right' : 'center'
       context.fillText(dateLabel.format(points[tickIndex].date), x, bottom + 17)
       previousTick = x
+    }
+
+    if (points[first].sample.source === 'estimate' && points[last].sample.source !== 'estimate') {
+      const boundary = points.findIndex(({ sample }, index) => index >= first && sample.source === 'measured')
+      const x = xFor(boundary)
+      context.strokeStyle = '#6485ac'
+      context.setLineDash([4, 4])
+      context.beginPath()
+      context.moveTo(x, top)
+      context.lineTo(x, bottom)
+      context.stroke()
+      context.setLineDash([])
+      context.fillStyle = '#4c5f77'
+      context.textAlign = x > right - 52 ? 'right' : 'left'
+      context.fillText('实测起点', x + (x > right - 52 ? -4 : 4), top - 9)
     }
 
     context.strokeStyle = '#aebfd5'
@@ -561,7 +533,7 @@
 
     context.save()
     context.beginPath()
-    context.rect(left, top, right - left - (playback ? endInset : 0), bottom - top)
+    context.rect(left, top, right - left, bottom - top)
     context.clip()
 
     const activeLine = series.find(({ name }) => name === highlighted)
@@ -583,17 +555,17 @@
     drawPortraits(right + portraitGap, portraitLayout.rows)
 
     function drawLine(line, muted) {
-      const { color, values } = line
+      const { color, values, pattern, light } = line
       context.globalAlpha = muted ? 0.16 : 1
       context.strokeStyle = color
       context.fillStyle = color
-      context.lineWidth = activeLine && !muted ? 3 : 2
+      const weight = activeLine && !muted ? 3 : 2
+      context.lineWidth = weight
+      context.setLineDash(pattern)
       context.lineJoin = 'round'
 
-      const lineFirst = playback ? Math.max(playback.first, first - 1) : first
-      const lineLast = progress > 0 ? Math.min(last + 1, playback.last) : last
-      const vertices = [[xFor(lineFirst), yFor(values[lineFirst])]]
-      for (let i = lineFirst + 1; i <= lineLast; i += 1) {
+      const vertices = [[xFor(first), yFor(values[first])]]
+      for (let i = first + 1; i <= last; i += 1) {
         const previous = values[i - 1]
         const current = values[i]
         const x = xFor(i)
@@ -608,7 +580,15 @@
       context.beginPath()
       context.moveTo(...vertices[0])
       for (let i = 1; i < vertices.length; i += 1) context.lineTo(...vertices[i])
+      if (light) {
+        context.strokeStyle = '#445871'
+        context.lineWidth = weight + 1
+        context.stroke()
+        context.strokeStyle = color
+        context.lineWidth = weight
+      }
       context.stroke()
+      context.setLineDash([])
 
       const x = xFor(index)
       const y = yFor(values[index])
@@ -761,9 +741,10 @@
     if (!nearest) return hideLineTooltip()
 
     const index = nearestPoint(x)
-    const date = (estimated ? month : daily ? calendarDay : dateTime).format(points[index].date)
+    const date = (daily ? calendarDay : dateTime).format(points[index].date)
     tooltip.firstElementChild.textContent = nearest.name
-    tooltip.lastElementChild.textContent = date + ' · ' + number.format(nearest.values[index]) + ' 项独享'
+    const source = pointSource(points[index].sample)
+    tooltip.lastElementChild.textContent = date + ' · ' + number.format(nearest.values[index]) + ' 项独享' + (source ? ' · ' + source : '')
     tooltip.style.borderInlineStartColor = nearest.color
     tooltip.hidden = false
     const right = bounds.width - tooltip.offsetWidth - 4
@@ -798,10 +779,10 @@
       next.timeZoom ||= next.first !== view.first || next.last !== view.last
     }
     if (Math.abs(start.y - end.y) >= 12) {
-      if (estimated) next.lockY = true
       const minimumSpan = Math.min(2, view.high - view.low)
       next.low = clamp(Math.floor(plot.valueAt(Math.max(start.y, end.y))), view.low, view.high - minimumSpan)
       next.high = clamp(Math.ceil(plot.valueAt(Math.min(start.y, end.y))), next.low + minimumSpan, view.high)
+      next.verticalZoom ||= next.low !== view.low || next.high !== view.high
     }
     return next
   }
@@ -816,32 +797,25 @@
     const shift = Math.round(dx / dragStep)
     const last = clamp(origin.last - shift, daily && !origin.timeZoom ? fullView.first : fullView.first + dates, fullView.last)
     const first = last - dates
-    if (estimated && !origin.lockY) {
-      if (last !== view.last) setView({ ...origin, first, last }, index + last - origin.last)
-      return
+    const next = { ...origin, first, last }
+    if (origin.verticalZoom) {
+      const { breakAt, factor } = origin
+      const startY = axisPosition(origin.low, breakAt, factor)
+      const height = axisPosition(origin.high, breakAt, factor) - startY
+      const fullTop = axisPosition(fullView.high, breakAt, factor)
+      const bottom = clamp(startY + dy * height / (plot.bottom - plot.top), 0, fullTop - height)
+      next.low = axisCount(bottom, breakAt, factor)
+      next.high = axisCount(bottom + height, breakAt, factor)
     }
-
-    const breakAt = estimated ? origin.breakAt : scaleBreak
-    const factor = upperScale(origin)
-    const ceiling = estimated ? origin.autoHigh : fullView.high
-    const startY = axisPosition(origin.low, breakAt, factor)
-    const height = axisPosition(origin.high, breakAt, factor) - startY
-    const fullBottom = axisPosition(fullView.low, breakAt, factor)
-    const fullTop = axisPosition(ceiling, breakAt, factor)
-    const bottom = clamp(startY + dy * height / (plot.bottom - plot.top), fullBottom, fullTop - height)
-    const low = axisCount(bottom, breakAt, factor)
-    const high = bottom === fullTop - height ? ceiling : axisCount(bottom + height, breakAt, factor)
-    if (last !== view.last || low !== view.low || high !== view.high) {
-      setView({ ...origin, first, last, low, high }, index + last - origin.last)
+    if (last !== view.last || next.low !== view.low || next.high !== view.high) {
+      setView(next, index + last - origin.last)
     }
   }
 
   canvas.addEventListener('pointerdown', event => {
     if (!plot || !event.isPrimary || event.button !== 0) return
-    if (playback?.running) setPlaying(false)
     hideLineTooltip()
     if (!boxMode && portraitAt(event)) return
-    if (stopPlayback()) setView(view)
     if (boxMode) {
       const start = chartLocation(event)
       drag = { kind: 'box', start, end: start, pointerId: event.pointerId }
@@ -896,7 +870,6 @@
     drawChart()
   })
   boxButton.addEventListener('click', () => {
-    if (stopPlayback()) setView(view)
     if (boxMode) stopInteraction()
     else boxMode = true
     renderZoomControls()
@@ -905,10 +878,8 @@
   zoomIn.addEventListener('click', () => zoomVertical(0.6))
   zoomOut.addEventListener('click', () => zoomVertical(1.75))
   zoomReset.addEventListener('click', () => {
-    stopPlayback()
     stopInteraction()
-    const end = estimated ? view.last : fullView.last
-    setView({ ...fullView, last: end }, end)
+    setView(fullView, fullView.last)
   })
   zoomTools.addEventListener('keydown', event => {
     if (event.key !== 'Escape' || !boxMode) return
@@ -919,10 +890,6 @@
   canvas.addEventListener('keydown', event => {
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
     event.preventDefault()
-    if (estimated) {
-      showReplayMonth(view.last + (event.key === 'ArrowLeft' ? -1 : 1))
-      return
-    }
     const bounds = view.timeZoom ? view : fullView
     const index = clamp(selectedIndex + (event.key === 'ArrowLeft' ? -1 : 1), bounds.first, bounds.last)
     if (index < view.first || index > view.last) {
@@ -934,115 +901,42 @@
       renderPoint()
     }
   })
-  function showReplayMonth(index) {
-    stopPlayback()
-    const end = clamp(index, fullView.first, fullView.last)
-    stopInteraction()
-    setView({ ...view, first: fullView.first, last: end, timeZoom: false }, end)
-  }
-
-  function setPlaying(playing) {
-    if (!playback) return
-    cancelAnimationFrame(playback.frame)
-    playback.running = playing
-    playback.timestamp = null
-    playButton.textContent = playing ? '暂停' : playback.position < playback.last ? '继续播放' : '重新播放'
-    if (playing) playback.frame = requestAnimationFrame(playReplayFrame)
-  }
-
-  function stopPlayback() {
-    if (!playback) return false
-    cancelAnimationFrame(playback.frame)
-    playback = null
-    playButton.textContent = '播放区间'
-    return true
-  }
-
-  function playReplayFrame(timestamp) {
-    const run = playback
-    if (!run?.running) return
-    const elapsed = run.timestamp === null ? 0 : timestamp - run.timestamp
-    run.timestamp = timestamp
-    run.position = Math.min(run.last, run.position + elapsed / msPerMonth)
-    const end = Math.floor(run.position)
-    if (end !== view.last) {
-      setView({ ...fullView, last: end }, end)
-    } else {
-      drawChart()
-    }
-    if (run.position === run.last) setPlaying(false)
-    else run.frame = requestAnimationFrame(playReplayFrame)
-  }
-
-  function updatePlaybackRange(event) {
-    if (Number(playStart.value) > Number(playEnd.value)) {
-      const other = event.target === playStart ? playEnd : playStart
-      other.value = event.target.value
-    }
-    if (stopPlayback()) setView(view)
-  }
-
-  playStart.addEventListener('change', updatePlaybackRange)
-  playEnd.addEventListener('change', updatePlaybackRange)
-  playButton.addEventListener('click', () => {
-    if (playback?.running) {
-      setPlaying(false)
-      return
-    }
-    if (playback && playback.position < playback.last) {
-      setPlaying(true)
+  scope.addEventListener('change', () => { if (!replayToggle.checked) rankOperators() })
+  includeClosed.addEventListener('change', () => { if (!replayToggle.checked) rankOperators() })
+  replayToggle.addEventListener('change', () => { if (!replayToggle.checked) rankOperators(true) })
+  jumpDate.addEventListener('change', () => {
+    const index = points.findIndex(({ date }) => inputDate(date) === jumpDate.value)
+    if (index < 0) {
+      jumpDate.value = inputDate(points[selectedIndex].date)
       return
     }
     stopInteraction()
-    const first = Number(playStart.value)
-    const last = Number(playEnd.value)
-    if (first === last) {
-      showReplayMonth(first)
-      return
-    }
-    playback = { first, last, position: first, timestamp: null, frame: 0, running: false }
-    setView({ ...fullView, last: first }, first)
-    setPlaying(true)
+    setView({ ...fullView, last: index }, index)
   })
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden && playback?.running) setPlaying(false)
-  })
-
-  replayMonth.addEventListener('change', () => showReplayMonth(Number(replayMonth.value)))
-  replayPrevious.addEventListener('click', () => showReplayMonth(view.last - 1))
-  replayNext.addEventListener('click', () => showReplayMonth(view.last + 1))
   granularity.addEventListener('change', refreshTimeline)
-  replayToggle.addEventListener('change', refreshTimeline)
-  scope.addEventListener('change', rankOperators)
-  includeClosed.addEventListener('change', rankOperators)
   search.addEventListener('input', renderChoices)
   choices.addEventListener('change', ({ target }) => {
-    stopPlayback()
     selectionMode = 'manual'
     if (target.checked) selection.add(target.value)
     else selection.delete(target.value)
     renderSelection()
   })
   showChanges.addEventListener('click', () => {
-    stopPlayback()
     selectionMode = 'changes'
     selection = new Set(changedNames())
-    renderSelection(points.length - 1, points.length - 1)
+    renderSelection(points.length - 1)
   })
   $('trend-top').addEventListener('click', () => {
-    stopPlayback()
     selectionMode = 'top'
-    applyRankedSelection(estimated ? view.last : fullView.last)
+    applyRankedSelection(fullView.last)
     renderSelection()
   })
   $('trend-all-exclusive').addEventListener('click', () => {
-    stopPlayback()
     selectionMode = 'exclusive'
-    applyRankedSelection(estimated ? view.last : fullView.last)
+    applyRankedSelection(fullView.last)
     renderSelection()
   })
   $('trend-clear').addEventListener('click', () => {
-    stopPlayback()
     selectionMode = 'manual'
     selection.clear()
     renderSelection()
@@ -1053,11 +947,12 @@
     $('trend-picker-summary').focus()
   })
   new ResizeObserver(() => {
+    if (replayToggle.checked) return
     stopInteraction()
     setView(view)
   }).observe(canvas)
   $('trend-empty').hidden = true
   $('trend-panel').hidden = false
-  $('trend-replay-option').hidden = !replay?.samples.length
+  window.ARKREC_OPEN_DETAILS = openDetails
   refreshTimeline()
 })()

@@ -6,11 +6,14 @@
   <meta name="description" content="查看解手流独享数随时间的变化。">
   <title>独享数历史 · 解手独享速查</title>
   <link rel="icon" type="image/png" sizes="285x345" href="./site-icon.png?v=da292383">
-  <link rel="stylesheet" href="./style.css?v=replay-playback">
+  <link rel="stylesheet" href="./style.css?v=recent-axis-skin-colors">
   <script defer src="./snapshot.js"></script>
-  <script defer src="./trend-portraits.js?v=complete-roster"></script>
-  <script defer src="./replay-history.js?v=20261118"></script>
-  <script defer src="./trends.js?v=replay-playback"></script>
+  <script defer src="./trend-portraits.js?v=client-skin-colors"></script>
+  <script defer src="./replay-history.js?v=daily-20261118"></script>
+  <script defer src="./replay-data.js?v=rank-controls"></script>
+  <script defer src="./trends.js?v=recent-axis-skin-colors"></script>
+  <script defer src="./replay-events.js?v=event-banners"></script>
+  <script defer src="./replay-rank.js?v=rank-scale-50"></script>
 </head>
 <body>
   <header class="header">
@@ -36,7 +39,7 @@
             <option value="main">主线</option>
           </select>
         </div>
-        <div>
+        <div id="trend-recent-granularity">
           <label for="trend-granularity" class="field-label">时间粒度</label>
           <select id="trend-granularity">
             <option value="day">每天</option>
@@ -65,7 +68,7 @@
         <button class="trend-show-changes" id="trend-show-changes" type="button" hidden>只选有变化的干员</button>
       </div>
       <p class="trend-caption trend-replay-note" id="trend-replay-note" hidden></p>
-      <div class="trend-chart">
+      <div class="trend-chart" id="trend-recent-chart">
         <div class="trend-chart-heading">
           <output id="trend-readout" aria-live="polite"></output>
           <div id="trend-zoom-tools" class="trend-zoom-tools" role="group" aria-label="图表缩放">
@@ -75,19 +78,13 @@
             <button type="button" id="trend-zoom-reset">恢复全图</button>
           </div>
         </div>
-        <div id="trend-replay-navigation" class="trend-replay-navigation" role="group" aria-label="历史估算月份" hidden>
-          <button id="trend-replay-previous" type="button">上个月</button>
-          <select id="trend-replay-month" aria-label="选择历史估算月份"></select>
-          <button id="trend-replay-next" type="button">下个月</button>
-        </div>
-        <div id="trend-replay-playback" class="trend-replay-navigation" role="group" aria-label="历史区间播放" hidden>
-          <label>起始 <select id="trend-play-start" aria-label="起始月份"></select></label>
-          <label>结束 <select id="trend-play-end" aria-label="结束月份"></select></label>
-          <button id="trend-play-toggle" type="button">播放区间</button>
-        </div>
         <p id="trend-zoom-hint" class="trend-zoom-hint" role="status" hidden></p>
         <p class="empty" id="trend-no-selection" hidden>选择干员后可查看趋势。</p>
         <p id="trend-scale-label" class="trend-zoom-hint" hidden></p>
+        <div class="trend-backfill" id="trend-backfill" hidden>
+          <label>跳到日期 <input id="trend-jump-date" type="date"></label>
+          <span id="trend-backfill-note"></span>
+        </div>
         <p class="trend-zoom-hint">右侧头像对应可见曲线的右端，点击查看当前独享</p>
         <div class="trend-plot">
           <canvas id="trend-canvas" role="img" tabindex="0" aria-label="解手流独享趋势，按左右方向键选择日期，头像旁显示可见曲线右端的独享数"></canvas>
@@ -97,6 +94,42 @@
         </div>
         <ul id="trend-legend" class="trend-legend" aria-label="所选日期的干员独享数"></ul>
       </div>
+      <section id="trend-race" class="trend-race" aria-label="独享数动态排行" hidden>
+        <div class="trend-race-heading">
+          <div><h2>独享数排行</h2><p id="race-source" class="trend-caption"></p></div>
+          <time id="race-date"></time>
+          <label class="trend-race-limit">前 <input id="race-limit" type="number" min="1" step="1" value="20" aria-label="前几名"> 名</label>
+        </div>
+        <div class="trend-replay-navigation" role="group" aria-label="历史估算日期">
+          <button id="race-previous" type="button">前一天</button>
+          <input id="race-day" type="date" aria-label="查看日期">
+          <button id="race-next" type="button">后一天</button>
+        </div>
+        <div class="trend-replay-navigation" role="group" aria-label="历史区间播放">
+          <label>起始 <input id="race-start" type="date" aria-label="起始日期"></label>
+          <label>结束 <input id="race-end" type="date" aria-label="结束日期"></label>
+          <button id="race-play" type="button">播放区间</button>
+          <button id="race-reset" type="button">重置</button>
+          <label class="trend-race-speed">速度 <input id="race-speed" type="range" min="1" max="10" value="3" step="1" aria-label="播放速度">
+            <output id="race-speed-value" for="race-speed">3 次变化/秒</output></label>
+        </div>
+        <div class="trend-event-panel">
+          <p id="race-event-current" class="trend-caption">首开作战活动时间轴</p>
+          <div class="trend-event-frame">
+            <div id="race-event-scroll" class="trend-event-scroll" role="region" aria-label="首开作战活动时间轴" tabindex="0">
+              <div id="race-event-track" class="trend-event-track">
+                <div id="race-event-line" class="trend-event-line" role="slider" aria-label="历史播放日期" tabindex="0">
+                  <div id="race-event-progress" class="trend-event-progress"></div>
+                </div>
+              </div>
+            </div>
+            <span id="race-event-cursor" class="trend-event-cursor" aria-hidden="true" hidden></span>
+          </div>
+        </div>
+        <div class="trend-race-scale" id="race-scale" aria-label="独享数刻度"></div>
+        <div class="trend-race-rows" id="race-rows"></div>
+        <p class="empty" id="race-empty" hidden>这一天在当前范围内没有独享。</p>
+      </section>
     </section>
     <p class="empty" id="trend-empty">暂无少人 Wiki 独享快照。</p>
     <dialog id="trend-detail" class="trend-detail" aria-labelledby="trend-detail-title">
