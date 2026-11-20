@@ -10,7 +10,6 @@
   const picker = $('trend-picker')
   const search = $('trend-search')
   const choices = $('trend-choices')
-  const position = $('trend-position')
   const readout = $('trend-readout')
   const legend = $('trend-legend')
   const canvas = $('trend-canvas')
@@ -40,8 +39,12 @@
   const axisGutter = 39
   const edgeGutter = 16
   const pointInset = 21
+  const portraitPitch = 18
+  const portraitRadius = 8
+  const portraitGap = 8
+  const portraitLabelWidth = 25
   const scaleBreak = 30
-  const lowerShare = 0.72
+  const lowerShare = 0.8
   const colors = [
     '#175fb4', '#b53b42', '#067b6b', '#8048a8', '#b26209',
     '#217692', '#8f4266', '#466127', '#344dab', '#a4481f',
@@ -56,6 +59,7 @@
     for (const name of Object.keys(sample.includingClosed.all)) names.add(name)
   }
 
+  let selectedIndex = 0
   let daily = true
   let ranked = []
   let selection = new Set()
@@ -136,7 +140,7 @@
     if (selectionMode === 'changes') selection = new Set(changed)
   }
 
-  function renderSelection(index = Number(position.value)) {
+  function renderSelection(index = selectedIndex) {
     for (const { input } of choiceInputs) input.checked = selection.has(input.value)
     $('trend-picker-summary').textContent = '干员 · 已选 ' + selection.size
     series = ranked.filter(name => selection.has(name)).map((name, index) => ({
@@ -184,22 +188,29 @@
 
   const clamp = (value, low, high) => Math.min(high, Math.max(low, value))
 
+  function portraitLanes(width) {
+    if (!portraitIndices.size) return 0
+    const space = width - axisGutter - edgeGutter - daySpacing - 2 * pointInset - portraitGap - portraitLabelWidth
+    return clamp(Math.floor(space / portraitPitch), 0, 9)
+  }
+
+  function timelineWidth(width) {
+    const lanes = portraitLanes(width)
+    return width - axisGutter - edgeGutter - (lanes ? portraitGap + portraitLabelWidth + lanes * portraitPitch : 0)
+  }
+
   function dailyWindow(last) {
     if (!daily) return { first: fullView.first, last: fullView.last }
-    const width = canvas.clientWidth - axisGutter - edgeGutter - 2 * pointInset
+    const width = timelineWidth(canvas.clientWidth) - 2 * pointInset
     const capacity = Math.max(1, Math.floor(width / daySpacing) + 1)
     const slots = Math.min(capacity, fullView.last + 1)
     last = clamp(last, slots - 1, fullView.last)
     return { first: last - slots + 1, last }
   }
 
-  function setView(next, index = Number(position.value)) {
+  function setView(next, index = selectedIndex) {
     view = next
-    const range = daily && !view.timeZoom ? fullView : view
-    position.min = String(range.first)
-    position.max = String(range.last)
-    position.value = String(clamp(index, view.first, view.last))
-    position.hidden = !series.length || range.first === range.last
+    selectedIndex = clamp(index, view.first, view.last)
     renderZoomControls()
     renderPoint()
   }
@@ -254,7 +265,7 @@
     const span = clamp(Math.round((view.high - view.low) * factor), Math.min(2, fullView.high), fullView.high)
     const line = series.find(item => item.name === highlighted)
     const fullHeight = view.low === fullView.low && view.high === fullView.high
-    const focus = line?.values[Number(position.value)] ?? (fullHeight ? view.low : (view.low + view.high) / 2)
+    const focus = line?.values[selectedIndex] ?? (fullHeight ? view.low : (view.low + view.high) / 2)
     const center = clamp(focus, view.low, view.high)
     const low = clamp(Math.round(center - span / 2), fullView.low, fullView.high - span)
     stopInteraction()
@@ -262,11 +273,9 @@
   }
 
   function renderPoint() {
-    const index = Number(position.value)
+    const index = selectedIndex
     const { date } = points[index]
-    const label = (daily ? calendarDay : dateTime).format(date)
-    readout.textContent = label
-    position.setAttribute('aria-valuetext', label)
+    readout.textContent = (daily ? calendarDay : dateTime).format(date)
     for (const [lineIndex, { name, button, value, delta }] of legendRows.entries()) {
       const values = series[lineIndex].values
       value.textContent = number.format(values[index])
@@ -291,12 +300,12 @@
 
     const { first, last, low, high } = view
     const fixedDays = daily && !view.timeZoom
-    const plotWidth = width - axisGutter - edgeGutter
+    const plotWidth = timelineWidth(width)
     const chartWidth = fixedDays ? Math.min(plotWidth, daySpacing * (last - first) + 2 * pointInset) : plotWidth
-    const left = axisGutter + (plotWidth - chartWidth) / 2
+    const left = axisGutter
     const right = left + chartWidth
     const inset = fixedDays ? Math.min(pointInset, chartWidth / 2) : 0
-    const top = 16
+    const top = 24
     const bottom = height - 32
     const base = axisPosition(low)
     const scaledRange = axisPosition(high) - base
@@ -307,11 +316,7 @@
     const span = xValue(last) - startX
     const xFor = index => span ? left + inset + (chartWidth - 2 * inset) * (xValue(index) - startX) / span : (left + right) / 2
     plot = { left, right, top, bottom, xFor, valueAt, dragStep: fixedDays ? daySpacing : chartWidth / Math.max(1, last - first) }
-    const timelineFits = fixedDays && first === fullView.first && last === fullView.last
-    const thumbRadius = 8
-    position.style.marginLeft = timelineFits ? (left + inset - thumbRadius) + 'px' : ''
-    position.style.width = timelineFits ? (chartWidth - 2 * inset + 2 * thumbRadius) + 'px' : ''
-    const index = Number(position.value)
+    const index = selectedIndex
 
     context.font = '12px system-ui'
     context.textBaseline = 'middle'
@@ -345,6 +350,12 @@
       context.fillText(number.format(value), left - 8, y)
     }
 
+    context.strokeStyle = '#aebfd5'
+    context.beginPath()
+    context.moveTo(left, top)
+    context.lineTo(left, bottom)
+    context.stroke()
+
     const tickCount = fixedDays ? last - first + 1 : Math.min(last - first + 1, width < 470 ? 3 : 6)
     const start = points[first].date
     const end = points[last].date
@@ -375,21 +386,12 @@
     context.rect(left, top, right - left, bottom - top)
     context.clip()
 
-    const zoomed = view.timeZoom || view.low !== fullView.low || view.high !== fullView.high
-    const portraitMode = zoomed || upperScale() < 1
-    if (portraitMode && portraits && !avatarSheet) {
-      avatarSheet = new Image()
-      avatarSheet.addEventListener('load', drawChart, { once: true })
-      avatarSheet.src = portraits.file
-    }
-    const showPortraits = portraitMode && avatarSheet?.naturalWidth
-    const markers = []
+
     const activeLine = series.find(({ name }) => name === highlighted)
     for (const line of series) {
       if (line !== activeLine) drawLine(line, Boolean(activeLine))
     }
     if (activeLine) drawLine(activeLine, false)
-    drawPortraits(markers, plot)
 
     if (drag?.kind === 'box') {
       const width = drag.end.x - drag.start.x
@@ -401,8 +403,9 @@
       context.strokeRect(drag.start.x, drag.start.y, width, height)
     }
     context.restore()
+    drawPortraits(right + portraitGap, portraitLanes(width), yFor)
 
-    function drawLine({ name, color, values }, muted) {
+    function drawLine({ color, values }, muted) {
       context.globalAlpha = muted ? 0.16 : 1
       context.strokeStyle = color
       context.fillStyle = color
@@ -424,12 +427,7 @@
 
       const x = xFor(index)
       const y = yFor(values[index])
-      const portraitIndex = portraitIndices.get(name)
-      if (showPortraits && !muted && portraitIndex !== undefined && y >= top && y <= bottom) {
-        markers.push({ x, y, color, portraitIndex, focused: name === highlighted })
-      } else {
-        drawDot(x, y, activeLine && !muted ? 5 : 3.3)
-      }
+      drawDot(x, y, activeLine && !muted ? 5 : 3.3)
       context.globalAlpha = 1
     }
   }
@@ -440,57 +438,81 @@
     context.fill()
   }
 
-  function drawPortraits(markers, { left, right, top, bottom }) {
-    if (!markers.length) return
-    const radius = 10
-    const spacing = 2 * radius + 3
-    const inset = radius + 2
-    const placed = []
+  function drawPortraits(left, lanes, yFor) {
+    if (!lanes) return
+    if (!avatarSheet) {
+      avatarSheet = new Image()
+      avatarSheet.addEventListener('load', drawChart, { once: true })
+      avatarSheet.src = portraits.file
+    }
+    if (!avatarSheet.naturalWidth) return
 
-    for (const marker of markers) {
-      const y = clamp(marker.y, top + inset, bottom - inset)
-      const towardCenter = marker.x < (left + right) / 2 ? spacing : -spacing
-      const offsets = [0, towardCenter, -towardCenter]
-      const x = offsets.map(offset => clamp(marker.x + offset, left + inset, right - inset))
-        .find(candidate => placed.every(item => Math.hypot(item.x - candidate, item.y - y) >= spacing))
-      if (x !== undefined) placed.push({ x, y, marker })
-      else {
-        context.fillStyle = marker.color
-        drawDot(marker.x, marker.y, 3.3)
+    const groups = new Map()
+    for (const line of series) {
+      const value = line.values.at(-1)
+      const portraitIndex = portraitIndices.get(line.name)
+      if (value < view.low || value > view.high || portraitIndex === undefined) continue
+      if (!groups.has(value)) groups.set(value, [])
+      groups.get(value).push({ ...line, portraitIndex })
+    }
+
+    const occupied = []
+    const rows = [...groups].sort(([a, first], [b, second]) => second.length - first.length || b - a)
+    const right = left + lanes * portraitPitch + portraitLabelWidth
+    const numberGap = 4
+    context.save()
+    context.font = '11px system-ui'
+    context.textBaseline = 'middle'
+    context.textAlign = 'left'
+    context.fillStyle = '#354e6b'
+    for (const [value, operators] of rows) {
+      const y = yFor(value)
+      const nearby = occupied.filter(row => Math.abs(y - row.y) < portraitPitch)
+      const label = number.format(value)
+      const textWidth = Math.ceil(context.measureText(label).width)
+      let count = Math.min(operators.length, lanes)
+      let rowX
+      while (count && rowX === undefined) {
+        const width = count * portraitPitch + numberGap + textWidth
+        for (let lane = 0; lane + count <= lanes; lane += 1) {
+          const x = left + lane * portraitPitch
+          if (x + width > right || nearby.some(row => x < row.right && x + width > row.left)) continue
+          rowX = x
+          break
+        }
+        if (rowX === undefined) count -= 1
       }
+      if (rowX === undefined) continue
+      const visible = operators.slice(0, count)
+      const focused = operators.find(({ name }) => name === highlighted)
+      if (focused && !visible.includes(focused)) visible[count - 1] = focused
+      for (const [index, operator] of visible.entries()) {
+        drawPortrait(operator, rowX + (index + 0.5) * portraitPitch, y)
+      }
+      const labelX = rowX + count * portraitPitch + numberGap
+      context.fillText(label, labelX, y)
+      occupied.push({ y, left: rowX, right: labelX + textWidth + 2 })
     }
+    context.restore()
+  }
 
-    context.lineWidth = 1
-    for (const { x, y, marker } of placed) {
-      if (x === marker.x && y === marker.y) continue
-      context.globalAlpha = 0.7
-      context.strokeStyle = marker.color
-      context.fillStyle = marker.color
-      context.beginPath()
-      context.moveTo(marker.x, marker.y)
-      context.lineTo(x, y)
-      context.stroke()
-      drawDot(marker.x, marker.y, 2.2)
-    }
-
+  function drawPortrait({ name, color, portraitIndex }, x, y) {
     const { columns, cell } = portraits
-    for (const { x, y, marker } of placed) {
-      const sourceX = marker.portraitIndex % columns * cell
-      const sourceY = Math.floor(marker.portraitIndex / columns) * cell
-      context.save()
-      context.globalAlpha = 1
-      context.beginPath()
-      context.arc(x, y, radius, 0, Math.PI * 2)
-      context.clip()
-      context.drawImage(avatarSheet, sourceX, sourceY, cell, cell, x - radius, y - radius, radius * 2, radius * 2)
-      context.restore()
-      context.strokeStyle = marker.color
-      context.lineWidth = marker.focused ? 2.5 : 1.5
-      context.beginPath()
-      context.arc(x, y, radius, 0, Math.PI * 2)
-      context.stroke()
-    }
-    context.globalAlpha = 1
+    const sourceX = portraitIndex % columns * cell
+    const sourceY = Math.floor(portraitIndex / columns) * cell
+    context.save()
+    context.globalAlpha = highlighted && name !== highlighted ? 0.28 : 1
+    context.beginPath()
+    context.arc(x, y, portraitRadius, 0, Math.PI * 2)
+    context.save()
+    context.clip()
+    const size = portraitRadius * 2
+    context.drawImage(avatarSheet, sourceX, sourceY, cell, cell, x - portraitRadius, y - portraitRadius, size, size)
+    context.restore()
+    context.strokeStyle = color
+    context.lineWidth = name === highlighted ? 2 : 1
+    context.stroke()
+    context.restore()
   }
 
   function nearestPoint(x) {
@@ -509,8 +531,8 @@
     const x = event.clientX - canvas.getBoundingClientRect().left
     if (x < plot.left || x > plot.right) return
     const index = nearestPoint(x)
-    if (Number(position.value) === index) return
-    position.value = String(index)
+    if (selectedIndex === index) return
+    selectedIndex = index
     renderPoint()
   }
 
@@ -566,7 +588,7 @@
     } else if (canvas.classList.contains('can-pan')) {
       drag = {
         kind: 'pan', start: { x: event.clientX, y: event.clientY }, pointerId: event.pointerId,
-        origin: view, index: Number(position.value), dragStep: plot.dragStep, moved: false,
+        origin: view, index: selectedIndex, dragStep: plot.dragStep, moved: false,
       }
       canvas.classList.add('is-panning')
     } else return
@@ -622,12 +644,18 @@
     renderZoomControls()
     drawChart()
   })
-  position.addEventListener('input', () => {
-    const index = Number(position.value)
-    if (!view.timeZoom && (index < view.first || index > view.last)) {
+  canvas.addEventListener('keydown', event => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+    event.preventDefault()
+    const bounds = view.timeZoom ? view : fullView
+    const index = clamp(selectedIndex + (event.key === 'ArrowLeft' ? -1 : 1), bounds.first, bounds.last)
+    if (index < view.first || index > view.last) {
       const last = index < view.first ? index + view.last - view.first : index
       setView({ ...view, ...dailyWindow(last) }, index)
-    } else renderPoint()
+    } else if (index !== selectedIndex) {
+      selectedIndex = index
+      renderPoint()
+    }
   })
   granularity.addEventListener('change', refreshTimeline)
   scope.addEventListener('change', rankOperators)

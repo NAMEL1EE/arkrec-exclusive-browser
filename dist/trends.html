@@ -6,10 +6,10 @@
   <meta name="description" content="查看解手流独享数随时间的变化。">
   <title>独享数历史 · 解手独享速查</title>
   <link rel="icon" type="image/png" sizes="285x345" href="./site-icon.png?v=da292383">
-  <link rel="stylesheet" href="./style.css?v=fixed-days">
+  <link rel="stylesheet" href="./style.css?v=tall-chart">
   <script defer src="./snapshot.js"></script>
   <script defer src="./trend-portraits.js"></script>
-  <script defer src="./trends.js?v=split-axis-preview"></script>
+  <script defer src="./trends.js?v=tall-chart"></script>
 </head>
 <body>
   <header class="header">
@@ -63,7 +63,7 @@
       </div>
       <div class="trend-chart">
         <div class="trend-chart-heading">
-          <output id="trend-readout" for="trend-position" aria-live="polite"></output>
+          <output id="trend-readout" aria-live="polite"></output>
           <div id="trend-zoom-tools" class="trend-zoom-tools" role="group" aria-label="图表缩放">
             <button type="button" id="trend-box-zoom" aria-pressed="false" aria-controls="trend-canvas">框选放大</button>
             <button type="button" id="trend-zoom-in" aria-label="放大纵轴" title="放大纵轴">＋</button>
@@ -74,8 +74,8 @@
         <p id="trend-zoom-hint" class="trend-zoom-hint" role="status" hidden></p>
         <p class="empty" id="trend-no-selection" hidden>选择干员后可查看趋势。</p>
         <p id="trend-scale-label" class="trend-zoom-hint" hidden></p>
-        <canvas id="trend-canvas" role="img" aria-label="所选干员的解手流独享数变化"></canvas>
-        <input type="range" id="trend-position" aria-label="选择时间点" min="0" step="1">
+        <p class="trend-zoom-hint">右侧头像按最新快照排列</p>
+        <canvas id="trend-canvas" role="img" tabindex="0" aria-label="解手流独享趋势，按左右方向键选择日期，右侧显示最新独享数"></canvas>
         <ul id="trend-legend" class="trend-legend" aria-label="所选日期的干员独享数"></ul>
       </div>
     </section>

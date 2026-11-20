@@ -167,12 +167,11 @@ td[data-mode=challenge] .chip{background:var(--amber-pale);color:var(--amber)}
 .trend-zoom-tools button:disabled{opacity:.48;cursor:default}
 .trend-zoom-hint{margin:5px 6px 0;color:var(--muted);font-size:.78rem}
 .trend-chart-heading output{color:var(--accent);font-weight:700;font-variant-numeric:tabular-nums}
-#trend-canvas{display:block;width:100%;height:clamp(212px,34vh,318px);touch-action:pan-y}
+#trend-canvas{display:block;width:100%;height:clamp(440px,58vh,560px);touch-action:pan-y}
 #trend-canvas.can-pan{cursor:grab;touch-action:none}
 #trend-canvas.pan-dates{touch-action:pan-y}
 #trend-canvas.is-panning{cursor:grabbing}
 #trend-canvas.box-zoom{cursor:crosshair;touch-action:none}
-#trend-position{display:block;width:calc(100% - 55px);margin:1px 16px 9px 39px;padding:0;accent-color:var(--accent)}
 .trend-legend{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(148px,100%),1fr));gap:5px;margin:7px 0 0;padding:0;list-style:none}
 .trend-legend-item{display:flex;align-items:center;gap:5px;min-width:0;width:100%;padding:5px 7px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);text-align:left;font-size:.79rem}
 .trend-legend-item:hover,.trend-legend-item[aria-pressed=true]{border-color:#8eabd2;background:var(--pale)}
