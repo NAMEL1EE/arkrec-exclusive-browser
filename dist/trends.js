@@ -35,6 +35,10 @@
   const number = new Intl.NumberFormat('zh-CN')
   const deltaNumber = new Intl.NumberFormat('zh-CN', { signDisplay: 'exceptZero' })
   const byName = new Intl.Collator('zh-CN')
+  const daySpacing = 56
+  const axisGutter = 39
+  const edgeGutter = 16
+  const pointInset = 21
   const colors = [
     '#175fb4', '#b53b42', '#067b6b', '#8048a8', '#b26209',
     '#217692', '#8f4266', '#466127', '#344dab', '#a4481f',
@@ -105,11 +109,7 @@
   function refreshTimeline() {
     daily = granularity.value === 'day'
     const samples = daily ? [...days.values()] : history
-    points = samples.map(sample => {
-      const timestamp = Date.parse(sample.at)
-      const x = daily ? Math.floor((timestamp + 28_800_000) / 86_400_000) : timestamp
-      return { date: new Date(timestamp), sample, x }
-    })
+    points = samples.map(sample => ({ date: new Date(sample.at), sample }))
     renderTimelineSummary()
     renderSelection(points.length - 1)
   }
@@ -167,10 +167,10 @@
     legend.replaceChildren(...legendRows.map(({ item }) => item))
     const highest = series.reduce((max, line) => line.values.reduce((value, count) => Math.max(value, count), max), 1)
     const step = axisStep(highest)
-    fullView = { first: 0, last: points.length - 1, low: 0, high: Math.ceil(highest / step) * step }
+    fullView = { first: 0, last: points.length - 1, low: 0, high: Math.ceil(highest / step) * step, timeZoom: false }
     plot = null
     stopInteraction()
-    setView(fullView, index)
+    setView({ ...fullView, ...dailyWindow(fullView.last) }, index)
   }
 
   function axisStep(range) {
@@ -181,30 +181,42 @@
 
   const clamp = (value, low, high) => Math.min(high, Math.max(low, value))
 
+  function dailyWindow(last) {
+    if (!daily) return { first: fullView.first, last: fullView.last }
+    const width = canvas.clientWidth - axisGutter - edgeGutter - 2 * pointInset
+    const capacity = Math.max(1, Math.floor(width / daySpacing) + 1)
+    const slots = Math.min(capacity, fullView.last + 1)
+    last = clamp(last, slots - 1, fullView.last)
+    return { first: last - slots + 1, last }
+  }
+
   function setView(next, index = Number(position.value)) {
     view = next
-    position.min = String(view.first)
-    position.max = String(view.last)
+    const range = daily && !view.timeZoom ? fullView : view
+    position.min = String(range.first)
+    position.max = String(range.last)
     position.value = String(clamp(index, view.first, view.last))
-    position.hidden = !series.length || view.first === view.last
+    position.hidden = !series.length || range.first === range.last
     renderZoomControls()
     renderPoint()
   }
 
   function renderZoomControls() {
     const verticalZoom = view.low !== fullView.low || view.high !== fullView.high
-    const timeZoom = view.first !== fullView.first || view.last !== fullView.last
+    const canPanDates = view.first > fullView.first || view.last < fullView.last
+    const zoomed = view.timeZoom || verticalZoom
     zoomTools.hidden = !series.length
     boxButton.setAttribute('aria-pressed', String(boxMode))
     canvas.classList.toggle('box-zoom', boxMode)
-    canvas.classList.toggle('can-pan', !boxMode && (timeZoom || verticalZoom))
+    canvas.classList.toggle('can-pan', !boxMode && (canPanDates || verticalZoom))
+    canvas.classList.toggle('pan-dates', !boxMode && canPanDates && !verticalZoom)
     zoomIn.disabled = view.high - view.low <= 2
     zoomOut.disabled = !verticalZoom
-    zoomReset.disabled = !verticalZoom && !timeZoom && !boxMode
-    zoomHint.hidden = !series.length || (!boxMode && !verticalZoom && !timeZoom)
-    zoomHint.textContent = boxMode
-      ? '在图内拖动框选，松开即可放大。'
-      : '拖动图表可平移。当前范围 ' + number.format(view.low) + '–' + number.format(view.high) + ' 项'
+    zoomReset.disabled = !zoomed && !boxMode && view.last === fullView.last
+    zoomHint.hidden = !series.length || (!boxMode && !zoomed && !canPanDates)
+    if (boxMode) zoomHint.textContent = '在图内拖动框选，松开即可放大。'
+    else if (zoomed) zoomHint.textContent = '拖动图表可平移。当前范围 ' + number.format(view.low) + '–' + number.format(view.high) + ' 项'
+    else zoomHint.textContent = '左右拖动查看其他日期。'
   }
 
   function stopInteraction() {
@@ -254,18 +266,27 @@
     canvas.height = Math.round(height * pixelRatio)
     context.scale(pixelRatio, pixelRatio)
 
-    const left = 39
-    const right = width - 16
+    const { first, last, low, high } = view
+    const fixedDays = daily && !view.timeZoom
+    const plotWidth = width - axisGutter - edgeGutter
+    const chartWidth = fixedDays ? Math.min(plotWidth, daySpacing * (last - first) + 2 * pointInset) : plotWidth
+    const left = axisGutter + (plotWidth - chartWidth) / 2
+    const right = left + chartWidth
+    const inset = fixedDays ? Math.min(pointInset, chartWidth / 2) : 0
     const top = 16
     const bottom = height - 32
-    const { first, last, low, high } = view
     const range = high - low
     const interval = axisStep(range)
     const yFor = value => bottom - (bottom - top) * (value - low) / range
-    const startX = points[first].x
-    const span = points[last].x - startX
-    const xFor = index => span ? left + (right - left) * (points[index].x - startX) / span : (left + right) / 2
-    plot = { left, right, top, bottom, xFor }
+    const xValue = index => daily ? index : points[index].date.getTime()
+    const startX = xValue(first)
+    const span = xValue(last) - startX
+    const xFor = index => span ? left + inset + (chartWidth - 2 * inset) * (xValue(index) - startX) / span : (left + right) / 2
+    plot = { left, right, top, bottom, xFor, dragStep: fixedDays ? daySpacing : chartWidth / Math.max(1, last - first) }
+    const timelineFits = fixedDays && first === fullView.first && last === fullView.last
+    const thumbRadius = 8
+    position.style.marginLeft = timelineFits ? (left + inset - thumbRadius) + 'px' : ''
+    position.style.width = timelineFits ? (chartWidth - 2 * inset + 2 * thumbRadius) + 'px' : ''
     const index = Number(position.value)
 
     context.font = '12px system-ui'
@@ -282,7 +303,7 @@
       context.fillText(number.format(value), left - 8, y)
     }
 
-    const tickCount = Math.min(last - first + 1, width < 470 ? 3 : 6)
+    const tickCount = fixedDays ? last - first + 1 : Math.min(last - first + 1, width < 470 ? 3 : 6)
     const start = points[first].date
     const end = points[last].date
     let dateLabel = day
@@ -293,8 +314,8 @@
       const tickIndex = first + Math.round(tick * (last - first) / Math.max(1, tickCount - 1))
       const x = xFor(tickIndex)
       const interior = tick > 0 && tick < tickCount - 1
-      if (interior && (x - previousTick < 62 || right - x < 62)) continue
-      context.textAlign = tickCount === 1 ? 'center' : tick === 0 ? 'left' : tick === tickCount - 1 ? 'right' : 'center'
+      if (!fixedDays && interior && (x - previousTick < 62 || right - x < 62)) continue
+      context.textAlign = fixedDays || tickCount === 1 ? 'center' : tick === 0 ? 'left' : tick === tickCount - 1 ? 'right' : 'center'
       context.fillText(dateLabel.format(points[tickIndex].date), x, bottom + 17)
       previousTick = x
     }
@@ -312,8 +333,7 @@
     context.rect(left, top, right - left, bottom - top)
     context.clip()
 
-    const zoomed = view.low !== fullView.low || view.high !== fullView.high
-      || first !== fullView.first || last !== fullView.last
+    const zoomed = view.timeZoom || view.low !== fullView.low || view.high !== fullView.high
     if (zoomed && portraits && !avatarSheet) {
       avatarSheet = new Image()
       avatarSheet.addEventListener('load', drawChart, { once: true })
@@ -452,6 +472,7 @@
   function choosePoint(event) {
     if (!plot) return
     const x = event.clientX - canvas.getBoundingClientRect().left
+    if (x < plot.left || x > plot.right) return
     const index = nearestPoint(x)
     if (Number(position.value) === index) return
     position.value = String(index)
@@ -471,6 +492,7 @@
     if (Math.abs(start.x - end.x) >= 12) {
       next.first = nearestPoint(Math.min(start.x, end.x))
       next.last = nearestPoint(Math.max(start.x, end.x))
+      next.timeZoom ||= next.first !== view.first || next.last !== view.last
     }
     if (Math.abs(start.y - end.y) >= 12) {
       const valueAt = y => view.low + (plot.bottom - y) * (view.high - view.low) / (plot.bottom - plot.top)
@@ -482,19 +504,19 @@
   }
 
   function panChart(event) {
-    const { origin, start, index } = drag
+    const { origin, start, index, dragStep } = drag
     const dx = event.clientX - start.x
     const dy = event.clientY - start.y
     if (!drag.moved && Math.hypot(dx, dy) < 5) return
     drag.moved = true
     const dates = origin.last - origin.first
     const height = origin.high - origin.low
-    const first = clamp(origin.first - Math.round(dx * Math.max(1, dates) / (plot.right - plot.left)),
+    const first = clamp(origin.first - Math.round(dx / dragStep),
       fullView.first, fullView.last - dates)
     const low = clamp(origin.low + Math.round(dy * height / (plot.bottom - plot.top)),
       fullView.low, fullView.high - height)
     if (first !== view.first || low !== view.low) {
-      setView({ first, last: first + dates, low, high: low + height }, index + first - origin.first)
+      setView({ ...origin, first, last: first + dates, low, high: low + height }, index + first - origin.first)
     }
   }
 
@@ -506,7 +528,7 @@
     } else if (canvas.classList.contains('can-pan')) {
       drag = {
         kind: 'pan', start: { x: event.clientX, y: event.clientY }, pointerId: event.pointerId,
-        origin: view, index: Number(position.value), moved: false,
+        origin: view, index: Number(position.value), dragStep: plot.dragStep, moved: false,
       }
       canvas.classList.add('is-panning')
     } else return
@@ -554,7 +576,7 @@
   zoomOut.addEventListener('click', () => zoomVertical(1.75))
   zoomReset.addEventListener('click', () => {
     stopInteraction()
-    setView(fullView)
+    setView({ ...fullView, ...dailyWindow(fullView.last) }, fullView.last)
   })
   zoomTools.addEventListener('keydown', event => {
     if (event.key !== 'Escape' || !boxMode) return
@@ -562,7 +584,13 @@
     renderZoomControls()
     drawChart()
   })
-  position.addEventListener('input', renderPoint)
+  position.addEventListener('input', () => {
+    const index = Number(position.value)
+    if (!view.timeZoom && (index < view.first || index > view.last)) {
+      const last = index < view.first ? index + view.last - view.first : index
+      setView({ ...view, ...dailyWindow(last) }, index)
+    } else renderPoint()
+  })
   granularity.addEventListener('change', refreshTimeline)
   scope.addEventListener('change', rankOperators)
   includeClosed.addEventListener('change', rankOperators)
@@ -593,7 +621,17 @@
     picker.open = false
     $('trend-picker-summary').focus()
   })
-  new ResizeObserver(drawChart).observe(canvas)
+  new ResizeObserver(() => {
+    if (daily && !view.timeZoom && series.length) {
+      const visibleDays = dailyWindow(view.last)
+      if (visibleDays.first !== view.first || visibleDays.last !== view.last) {
+        stopInteraction()
+        setView({ ...view, ...visibleDays })
+        return
+      }
+    }
+    drawChart()
+  }).observe(canvas)
   $('trend-empty').hidden = true
   $('trend-panel').hidden = false
   refreshTimeline()

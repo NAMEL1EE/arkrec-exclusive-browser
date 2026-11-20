@@ -169,6 +169,7 @@ td[data-mode=challenge] .chip{background:var(--amber-pale);color:var(--amber)}
 .trend-chart-heading output{color:var(--accent);font-weight:700;font-variant-numeric:tabular-nums}
 #trend-canvas{display:block;width:100%;height:clamp(212px,34vh,318px);touch-action:pan-y}
 #trend-canvas.can-pan{cursor:grab;touch-action:none}
+#trend-canvas.pan-dates{touch-action:pan-y}
 #trend-canvas.is-panning{cursor:grabbing}
 #trend-canvas.box-zoom{cursor:crosshair;touch-action:none}
 #trend-position{display:block;width:calc(100% - 55px);margin:1px 16px 9px 39px;padding:0;accent-color:var(--accent)}
