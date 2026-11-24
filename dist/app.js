@@ -28,6 +28,9 @@
   const displayLabel = group => [eventCode(group), label(group)].filter(Boolean).join(' ')
   const yearOf = group => Number.isFinite(Date.parse(group.release)) ? formatYear.format(new Date(group.release)) : ''
   const yearLabel = year => year ? year + ' 年' : '年份待定'
+  const formatDeadline = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  })
   const activities = data.groups.filter(group => group.story === ACTIVITY && group.stages.length > 0)
   const activityYears = new Map()
   for (const group of activities) {
@@ -37,8 +40,9 @@
   }
   const years = [...activityYears.keys()].sort((left, right) => right.localeCompare(left))
   const mainGroups = data.groups.filter(group => group.story === MAIN)
+  const searchGroups = [...activities, ...mainGroups]
   const preferredGroup = groups => groups?.find(group => group.stages.length) ?? groups?.[0] ?? null
-  const savedGroup = data.groups.find(group => group.id === params.get('group') && (group.story !== ACTIVITY || group.stages.length > 0))
+  const savedGroup = data.groups.find(group => group.id === params.get('group'))
   const savedYear = params.get('year')
   let selected = savedGroup ?? (activityYears.has(savedYear) ? null : preferredGroup(activityYears.get(years[0])))
   let pickerExpanded = !selected
@@ -62,6 +66,53 @@
     history.replaceState(null, '', url)
   }
 
+  function renderActiveActivities() {
+    const schedule = window.ARKREC_EVENT_SCHEDULE ?? []
+    const byName = new Map(data.groups.filter(group => group.story === ACTIVITY)
+      .map(group => [normalize(group.episode), group]))
+    const open = document.createDocumentFragment()
+    const upcoming = document.createDocumentFragment()
+    const shown = new Set()
+    const now = Date.now()
+    let nextChange = Infinity
+    const entries = schedule.filter(event => (event.end + 1) * 1000 > now)
+      .sort((a, b) => Number(a.start * 1000 > now) - Number(b.start * 1000 > now) || a.start - b.start)
+    for (const { name, start, end, rerun, noticeId } of entries) {
+      const group = byName.get(normalize(name))
+      const future = start * 1000 > now
+      if (!group || (future && !(rerun && noticeId))) continue
+      nextChange = Math.min(nextChange, (future ? start : end + 1) * 1000)
+      if (shown.has(group.id)) continue
+      shown.add(group.id)
+
+      const link = makeElement('a', '', 'active-activity-link')
+      link.href = '#' + new URLSearchParams({ group: group.id })
+      const title = makeElement('span', '', 'group-label')
+      const code = eventCode(group)
+      if (code) title.append(makeElement('span', code, 'event-code'))
+      title.append(makeElement('strong', group.episode + (rerun && !group.episode.endsWith('复刻') ? '·复刻' : '')))
+      const time = (future ? start : end) * 1000
+      const date = makeElement('time', (future ? '关卡预计开放 ' : '关卡开放至 ') + formatDeadline.format(time), 'active-activity-deadline')
+      date.dateTime = new Date(time).toISOString()
+      const arrow = makeElement('span', '→', 'active-activity-arrow')
+      arrow.setAttribute('aria-hidden', 'true')
+      link.append(title, date, arrow)
+      link.addEventListener('click', event => {
+        if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
+        event.preventDefault()
+        groupSearch.value = ''
+        selectGroup(group, null, true)
+      })
+      const list = future ? upcoming : open
+      list.append(link)
+    }
+    $('active-activities').hidden = !open.childElementCount
+    $('upcoming-activities').hidden = !upcoming.childElementCount
+    $('active-activity-list').replaceChildren(open)
+    $('upcoming-activity-list').replaceChildren(upcoming)
+    if (Number.isFinite(nextChange)) setTimeout(renderActiveActivities, Math.min(nextChange - now, 2_147_483_647))
+  }
+
   function renderOverview(group) {
     const stages = group.overview ?? []
     stepsToggle.hidden = !stages.length
@@ -79,9 +130,9 @@
     const fragment = document.createDocumentFragment()
     for (const stage of stages) {
       const row = makeStageRow(stage)
-      const heading = makeElement('th', stage.operation)
+      const heading = document.createElement('th')
       heading.scope = 'row'
-      heading.title = stage.cn_name
+      heading.append(makeStageLink(stage))
       row.append(heading)
       for (const mode of modes) {
         const count = stage.steps?.[mode]
@@ -106,6 +157,16 @@
     row.dataset.operation = stage.operation
     row.dataset.stageName = stage.cn_name
     return row
+  }
+
+  function makeStageLink(stage) {
+    const link = makeElement('a', stage.operation + ' ↗', 'stage-code')
+    link.href = sourceLink + encodeURIComponent(stage.operation + '+' + stage.cn_name)
+    link.target = '_blank'
+    link.rel = 'noopener'
+    link.title = stage.cn_name
+    link.setAttribute('aria-label', stage.operation + ' ' + stage.cn_name + '（少人 Wiki）')
+    return link
   }
 
   function markSharedStep(element, stage, mode) {
@@ -149,12 +210,7 @@
   }
 
   function updatePicker() {
-    const isActivity = story === ACTIVITY
-    $('years').hidden = !isActivity
     for (const button of tabButtons) button.setAttribute('aria-pressed', String(button.dataset.story === story))
-    $('picker-title').textContent = isActivity ? '选择活动' : '选择主线章节'
-    groupSearch.setAttribute('aria-label', isActivity ? '筛选活动或关卡' : '筛选章节或关卡')
-    groupSearch.placeholder = isActivity ? '活动或关卡（跨年份）' : '章节或关卡名称、代号'
     renderGroups()
     showSelection()
   }
@@ -162,10 +218,9 @@
   function renderGroups() {
     const input = groupSearch.value.normalize('NFKC').toLowerCase().replace(/\s+/g, '')
     const query = normalize(input)
-    const separatedMainCode = story === MAIN && /^[a-z]*\d+-\d*$/u.test(input)
-    const activityGroups = query ? activities : activityYears.get(year) ?? []
-    const groups = story === ACTIVITY ? activityGroups : mainGroups
-    const matches = separatedMainCode ? [] : groups.filter(group =>
+    $('years').hidden = story !== ACTIVITY || Boolean(query)
+    const groups = query ? searchGroups : story === ACTIVITY ? activityYears.get(year) ?? [] : mainGroups
+    const matches = groups.filter(group =>
       normalize(label(group)).includes(query)
       || Boolean(eventCode(group)?.toLowerCase().includes(query))
       || (group.chapter !== null && String(group.chapter) === query)
@@ -183,11 +238,11 @@
       if (code) name.append(makeElement('span', code, 'event-code'))
       name.append(makeElement('span', label(group)))
       button.append(name, count)
-      button.addEventListener('click', () => selectGroup(group))
+      button.addEventListener('click', () => selectGroup(group, null, Boolean(query)))
       fragment.append(button)
     }
     if (query) {
-      const stages = stageMatches(groups, separatedMainCode ? input : query, separatedMainCode)
+      const stages = stageMatches(groups, input, query)
       for (const { group, stage } of stages) {
         const button = makeElement('button', '', 'group-button stage-choice')
         button.type = 'button'
@@ -200,38 +255,44 @@
       }
     }
     if (!fragment.childElementCount) {
-      const message = story === ACTIVITY ? '没有匹配的活动或关卡。' : '没有匹配的章节或关卡。'
-      fragment.append(makeElement('p', message, 'empty'))
+      fragment.append(makeElement('p', '没有匹配的活动、章节或关卡。', 'empty'))
     }
     $('groups').replaceChildren(fragment)
   }
 
-  function stageMatches(groups, query, separatedMainCode) {
-    const code = stage => separatedMainCode ? stage.operation.toLowerCase() : normalize(stage.operation)
-    const anchored = story === MAIN && (separatedMainCode || /^\d/.test(query))
-    const matches = groups.flatMap(group => (group.overview ?? group.stages)
-      .filter(stage => {
-        const matchesCode = anchored ? code(stage).startsWith(query) : code(stage).includes(query)
-        return matchesCode || (!separatedMainCode && normalize(stage.cn_name).includes(query))
+  function stageMatches(groups, input, query) {
+    const separated = /^[a-z]*\d+-\d*$/u.test(input)
+    const matches = groups.flatMap(group => {
+      const main = group.story === MAIN
+      const prefix = main && separated ? input : query
+      const anchored = main && (separated || /^\d/.test(query))
+      return (group.overview ?? group.stages).flatMap(stage => {
+        const code = main && separated ? stage.operation.toLowerCase() : normalize(stage.operation)
+        const codeMatches = anchored ? code.startsWith(prefix) : code.includes(prefix)
+        const nameMatches = !separated && normalize(stage.cn_name).includes(query)
+        return codeMatches || nameMatches ? [{ group, stage, exact: code === prefix }] : []
       })
-      .map(stage => ({ group, stage })))
-    const exact = matches.filter(({ stage }) => code(stage) === query)
+    })
+    const exact = matches.filter(match => match.exact)
     return exact.length ? exact : matches
   }
 
-  function selectGroup(group, stage) {
-    if (selected?.id !== group.id) {
-      selected = group
-      if (group.story === ACTIVITY) year = yearOf(group)
-      saveSelection()
-      showSelection()
-    }
-    if (compactPicker.matches) {
-      pickerExpanded = false
-      updatePickerDisclosure()
-      if (!stage) $('picker-toggle').focus({ preventScroll: true })
-    }
+  function selectGroup(group, stage, reveal = false) {
+    const previousYear = year
+    const previousStory = story
+    if (previousStory !== group.story) lastGroup.set(previousStory, selected)
+    selected = group
+    story = group.story
+    if (story === ACTIVITY) year = yearOf(group)
+    saveSelection()
+    if (compactPicker.matches) pickerExpanded = false
+    if (reveal || previousStory !== story || previousYear !== year) updatePicker()
+    else showSelection()
     if (stage) focusStage(stage)
+    else if (reveal) {
+      $('group-title').focus({ preventScroll: true })
+      $('results').scrollIntoView({ block: 'start' })
+    } else if (compactPicker.matches) $('picker-toggle').focus({ preventScroll: true })
   }
 
   function focusStage(stage) {
@@ -258,14 +319,10 @@
       const row = makeStageRow(stage)
       const heading = document.createElement('th')
       heading.scope = 'row'
-      const link = makeElement('a', stage.operation + ' ↗', 'stage-code')
-      link.href = sourceLink + encodeURIComponent(stage.operation + '+' + stage.cn_name)
-      link.target = '_blank'
-      link.rel = 'noopener'
+      const link = makeStageLink(stage)
       const note = makeElement('a', '备注', 'stage-note')
       note.href = './notes.html?' + new URLSearchParams({ group: selected.id, operation: stage.operation, name: stage.cn_name })
       note.setAttribute('aria-label', stage.operation + ' 备注')
-      link.title = stage.cn_name
       heading.append(link, note)
       row.append(heading)
       for (const mode of modes) {
@@ -291,7 +348,6 @@
       lastGroup.set(story, selected)
       story = nextStory
       selected = lastGroup.has(story) ? lastGroup.get(story) : preferredGroup(story === ACTIVITY ? activityYears.get(year) : mainGroups)
-      groupSearch.value = ''
       saveSelection()
       updatePicker()
     })
@@ -319,4 +375,5 @@
   stepsToggle.addEventListener('click', () => setOverviewExpanded(overview.hidden))
   groupSearch.addEventListener('input', renderGroups)
   updatePicker()
+  renderActiveActivities()
 })()

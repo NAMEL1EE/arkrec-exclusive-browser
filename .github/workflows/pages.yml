@@ -3,6 +3,8 @@ name: 发布解手流独享查询
 on:
   push:
     branches: [main]
+  schedule:
+    - cron: '17 */6 * * *'
   workflow_dispatch:
     inputs:
       refresh:
@@ -22,6 +24,8 @@ jobs:
   prepare:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    outputs:
+      publish: ${{ steps.release.outputs.publish }}
     permissions:
       contents: write
     steps:
@@ -37,15 +41,32 @@ jobs:
           MAX_PAGES: ${{ inputs.max_pages }}
         run: |
           node scripts/sync.mjs update --max-pages "$MAX_PAGES"
+      - name: 同步活动预告
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.refresh)
+        run: |
+          if ! node scripts/event-schedule.mjs; then
+            echo "::warning::活动日程同步失败，继续使用上次保存的日程。"
+          fi
+      - name: 保存已更新的数据
+        id: save
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.refresh)
+        run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add dist/snapshot.js data/flow-records.json
+          git add dist/snapshot.js data/flow-records.json dist/event-schedule.js
           if ! git diff --cached --quiet; then
-            git commit -m "更新解手流独享快照"
+            git commit -m "更新解手流独享数据和活动日程"
             git push origin HEAD:main
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
+      - name: 判断是否发布
+        id: release
+        if: github.event_name != 'schedule' || steps.save.outputs.changed == 'true'
+        run: echo "publish=true" >> "$GITHUB_OUTPUT"
       - uses: actions/configure-pages@v5
+        if: steps.release.outputs.publish == 'true'
       - name: 配置公开服务和快照版本
+        if: steps.release.outputs.publish == 'true'
         env:
           NOTES_API_URL: ${{ vars.NOTES_API_URL }}
           REFRESH_API_URL: ${{ vars.REFRESH_API_URL }}
@@ -66,20 +87,25 @@ jobs:
             refreshUrl: apiUrl(process.env.REFRESH_API_URL, '/api/refresh'),
           }
           writeFileSync('dist/site-config.js', 'window.ARKREC_SITE_CONFIG = ' + JSON.stringify(config) + '\n')
-          const hash = createHash('sha256').update(readFileSync('dist/snapshot.js')).digest('hex').slice(0, 16)
+          const version = file => createHash('sha256').update(readFileSync(file)).digest('hex').slice(0, 16)
+          const hash = version('dist/snapshot.js')
+          const scheduleHash = version('dist/event-schedule.js')
           for (const file of ['dist/index.html', 'dist/trends.html']) {
             const html = readFileSync(file, 'utf8')
               .replace('src="./snapshot.js"', 'src="./snapshot.js?v=' + hash + '"')
+              .replace('src="./event-schedule.js"', 'src="./event-schedule.js?v=' + scheduleHash + '"')
               .replace('href="./trends.html"', 'href="./trends.html?v=' + hash + '"')
               .replace('href="./index.html"', 'href="./index.html?v=' + hash + '"')
             writeFileSync(file, html)
           }
           NODE
       - uses: actions/upload-pages-artifact@v4
+        if: steps.release.outputs.publish == 'true'
         with:
           path: dist
   deploy:
     needs: prepare
+    if: needs.prepare.outputs.publish == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read

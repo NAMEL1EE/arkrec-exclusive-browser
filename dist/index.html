@@ -6,9 +6,10 @@
   <meta name="description" content="按活动和主线章节查看明日方舟少人 Wiki 的解手流独享纪录。">
   <title>解手独享速查</title>
   <link rel="icon" type="image/png" sizes="285x345" href="./site-icon.png?v=da292383">
-  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./style.css?v=unified-search">
   <script defer src="./snapshot.js"></script>
-  <script defer src="./app.js"></script>
+  <script defer src="./event-schedule.js"></script>
+  <script defer src="./app.js?v=unified-search"></script>
   <script defer src="./site-config.js"></script>
   <script defer src="./refresh.js?v=status-retry"></script>
 </head>
@@ -38,7 +39,15 @@
       </div>
     </div>
     <div class="layout" id="layout" hidden>
-      <section class="picker" aria-label="选择活动或主线章节">
+      <section class="active-activities" id="active-activities" aria-labelledby="active-activities-title" hidden>
+        <h2 id="active-activities-title">正在开放</h2>
+        <div class="active-activity-list" id="active-activity-list"></div>
+      </section>
+      <section class="active-activities upcoming-activities" id="upcoming-activities" aria-labelledby="upcoming-activities-title" hidden>
+        <h2 id="upcoming-activities-title">即将复刻</h2>
+        <div class="active-activity-list" id="upcoming-activity-list"></div>
+      </section>
+      <section class="picker" aria-label="查询活动或主线章节">
         <button class="picker-toggle" id="picker-toggle" type="button" aria-controls="picker-body" aria-expanded="false">
           <span id="picker-current">选择活动</span><span class="picker-action" id="picker-action">切换 ▾</span>
         </button>
@@ -48,12 +57,9 @@
               <button type="button" data-story="活动关卡" aria-pressed="true">活动</button>
               <button type="button" data-story="主线关卡" aria-pressed="false">主线</button>
             </div>
+            <input id="group-search" type="search" aria-label="搜索活动、主线或关卡" autocomplete="off" placeholder="搜索活动、主线或关卡">
           </div>
           <div class="picker-content">
-            <div class="picker-heading">
-              <h2 id="picker-title">选择活动</h2>
-              <input id="group-search" type="search" aria-label="筛选活动或关卡" autocomplete="off" placeholder="活动或关卡（跨年份）">
-            </div>
             <div class="years" id="years" role="group" aria-label="选择活动年份"></div>
             <div class="groups" id="groups"></div>
           </div>
@@ -65,7 +71,7 @@
           <div class="result-identity">
             <div class="result-name">
               <p class="group-type" id="group-type"></p>
-              <h2 id="group-title"></h2>
+              <h2 id="group-title" tabindex="-1"></h2>
             </div>
             <button class="steps-toggle" id="steps-toggle" type="button" aria-expanded="false" aria-controls="group-steps" hidden>步数速查</button>
           </div>
