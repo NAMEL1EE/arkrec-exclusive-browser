@@ -161,53 +161,46 @@ export async function findChanges(request, cursor, maxPages = 32) {
   throw new Error('本次已达到最新记录请求上限，已保留原快照和游标。可在低峰时提高 --max-pages 单次追平。')
 }
 
+function readCachedExclusive(details) {
+  return Object.entries(details).map(([name, rows]) => ({
+    name,
+    operations: rows.map(([story, episode, operation, cn_name, operationType]) =>
+      ({ story, episode, operation, cn_name, operationType, category: FLOW })),
+  }))
+}
+
 export async function updateSnapshot(snapshot, request, maxPages) {
   const { targets, newDetails, cursor } = await findChanges(request, snapshot.cursor, maxPages)
   const episodes = normalizeOpenEpisodes((await request(openEpisodesPath)).data)
   const previous = snapshot.wikiExclusiveHistory
-  const cached = previous?.details && previous.samples.length && JSON.stringify(previous.episodes) === JSON.stringify(episodes)
-  // A 304 must cover both consumers when the stage list also needs updating.
-  const conditionalEtag = cached && (!targets.size || previous.etag === snapshot.etag) ? previous.etag : undefined
-  const result = await request(exclusivePath, undefined, conditionalEtag)
+  const cached = previous?.details && previous.samples?.length && JSON.stringify(previous.episodes) === JSON.stringify(episodes)
+  const result = await request(exclusivePath, undefined, cached ? previous.etag : undefined)
   const syncedAt = new Date().toISOString()
   const wikiExclusiveHistory = updateWikiHistory(previous, result, episodes, syncedAt, FLOW)
-  let groups = snapshot.groups
-  let etag = snapshot.etag
-  if (targets.size) {
-    const unchanged = result.unchanged || (result.etag && result.etag === snapshot.etag)
-    const catalog = new Map(groups.map(group => [group.id, group]))
-    const needsMenu = [...targets.values()].some(row => {
-      const group = catalog.get(groupKey(row.story, row.episode))
-      const isStage = stage => stage.operation === row.operation && stage.cn_name === row.cn_name
-      return !group || (isOverviewStage(row.story, row.operation) && !group.overview?.some(isStage))
-        || (row.story === '主线关卡' && row.sixStarRune?.length === 2 && !group.runeStages?.some(isStage))
-    })
-    if (needsMenu) {
-      const { data } = await request('/v1/api/menu?lang=0')
-      for (const [id, group] of getCatalog(data)) catalog.set(id, group)
-    }
-    if (!unchanged || needsMenu) {
-      const stages = new Map()
-      for (const group of groups) {
-        for (const row of group.stages) {
-          const stage = { ...row, story: group.story, episode: group.episode }
-          const key = stageKey(stage)
-          if (unchanged || !targets.has(key)) stages.set(key, stage)
-        }
-      }
-      if (!unchanged) {
-        for (const [key, stage] of getExclusive(result.data, targets)) stages.set(key, stage)
-        etag = result.etag
-      }
-      groups = buildGroups(catalog, stages)
-    }
+
+  // A correction can remove an exclusive without creating a new submission.
+  // Even a 304 can repair groups left stale by an earlier partial update.
+  const source = result.unchanged ? readCachedExclusive(wikiExclusiveHistory.details) : result.data
+  const stages = getExclusive(source)
+  const catalog = new Map(snapshot.groups.map(group => [group.id, group]))
+  const needsMenu = [...targets.values()].some(row => {
+    const group = catalog.get(groupKey(row.story, row.episode))
+    const isStage = stage => stage.operation === row.operation && stage.cn_name === row.cn_name
+    return !group || (isOverviewStage(row.story, row.operation) && !group.overview?.some(isStage))
+      || (row.story === '主线关卡' && row.sixStarRune?.length === 2 && !group.runeStages?.some(isStage))
+  })
+  if (needsMenu) {
+    const { data } = await request('/v1/api/menu?lang=0')
+    for (const [id, group] of getCatalog(data)) catalog.set(id, group)
   }
-  console.log('本次涉及 ' + targets.size + ' 个有新解手流记录的关卡')
+
   const records = new Map((snapshot.flowRecords ?? []).map(record => [record.id, record]))
-  for (const detail of newDetails) records.set(detail.id, detail)
+  for (const record of newDetails) records.set(record.id, record)
   const flowRecords = [...records.values()]
-  if (targets.size && flowRecords.length) groups = withFlowSteps(groups, flowRecords)
-  return { ...snapshot, groups, cursor, etag, flowRecords, syncedAt, wikiExclusiveHistory }
+  let groups = buildGroups(catalog, stages)
+  if (flowRecords.length) groups = withFlowSteps(groups, flowRecords)
+  console.log('已按独享汇总核对 ' + stages.size + ' 个关卡，本次新增步数记录 ' + newDetails.length + ' 条')
+  return { ...snapshot, groups, cursor, etag: result.etag, flowRecords, syncedAt, wikiExclusiveHistory }
 }
 
 function makeClient() {
