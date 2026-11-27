@@ -94,7 +94,6 @@ jobs:
             const html = readFileSync(file, 'utf8')
               .replace('src="./snapshot.js"', 'src="./snapshot.js?v=' + hash + '"')
               .replace('src="./event-schedule.js"', 'src="./event-schedule.js?v=' + scheduleHash + '"')
-              .replace('href="./trends.html"', 'href="./trends.html?v=' + hash + '"')
               .replace('href="./index.html"', 'href="./index.html?v=' + hash + '"')
             writeFileSync(file, html)
           }
